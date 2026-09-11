@@ -27,9 +27,11 @@ from config import (
 from models import (
     ClinicalFinding,
     EscalationLevel,
+    ExtractedSymptom,
     FindingCategory,
     FindingSeverity,
     Patient,
+    SymptomStatus,
     VitalSigns,
 )
 
@@ -173,17 +175,84 @@ def format_thresholds_for_prompt() -> str:
     return "\n".join(lines)
 
 
+def format_symptom_vocabulary_for_prompt() -> str:
+    """
+    Render the symptom vocabulary as prompt text.
+
+    The model reports status against these exact terms rather than inventing
+    its own, which keeps severity mapping deterministic on our side.
+    """
+    return (
+        "CRITICAL: " + ", ".join(CRITICAL_SYMPTOMS) + "\n"
+        "CONCERNING: " + ", ".join(CONCERNING_SYMPTOMS)
+    )
+
+
 # ─── Symptom Rules ────────────────────────────────────────────────────────────
+
+
+# Vocabulary handed to the model for extraction. Severity stays here rather
+# than being asked of the LLM, so the mapping is deterministic and auditable.
+_CRITICAL_LOOKUP = {s.lower(): s for s in CRITICAL_SYMPTOMS}
+_CONCERNING_LOOKUP = {s.lower(): s for s in CONCERNING_SYMPTOMS}
+
+
+def symptom_severity(symptom: str) -> Optional[FindingSeverity]:
+    """
+    Map a vocabulary term to its severity, or None if it is not in the
+    vocabulary at all.
+
+    Returning None matters: it is how an extraction that invented a term
+    outside the supplied vocabulary gets discarded instead of silently
+    becoming a finding of unknown weight.
+    """
+    key = symptom.strip().lower()
+    if key in _CRITICAL_LOOKUP:
+        return FindingSeverity.CRITICAL
+    if key in _CONCERNING_LOOKUP:
+        return FindingSeverity.CONCERNING
+    return None
+
+
+def findings_from_extraction(symptoms: list[ExtractedSymptom]) -> list[ClinicalFinding]:
+    """
+    Convert structured extraction into findings.
+
+    Only PRESENT symptoms become findings. DENIED and HISTORICAL are recorded
+    on the triage result for audit but carry no clinical weight, which is the
+    whole point of extracting status in the first place.
+    """
+    findings: list[ClinicalFinding] = []
+
+    for extracted in symptoms:
+        if extracted.status is not SymptomStatus.PRESENT:
+            continue
+
+        severity = symptom_severity(extracted.symptom)
+        if severity is None:
+            logger.warning(
+                "Extraction returned %r, which is not in the symptom vocabulary — ignoring",
+                extracted.symptom,
+            )
+            continue
+
+        findings.append(ClinicalFinding(
+            severity=severity,
+            category=FindingCategory.SYMPTOM,
+            detail=f"{severity.value.capitalize()} symptom present: '{extracted.symptom}'",
+        ))
+
+    return findings
 
 
 def assess_symptoms(chief_complaint: str) -> list[ClinicalFinding]:
     """
-    Scan the chief complaint for critical and concerning symptom keywords.
+    Substring fallback for when structured extraction is unavailable.
 
-    Known limitation: this is a substring scan, so it cannot tell "chest pain"
-    from "denies chest pain". The keyword lists are kept deliberately narrow to
-    limit the damage; negation and history are handled by structured extraction
-    in the triage node rather than here.
+    Used only if the triage LLM call fails. It cannot tell "chest pain" from
+    "denies chest pain", which is exactly why extraction replaced it on the
+    normal path — but degrading to a naive scan beats degrading to no symptom
+    detection at all.
     """
     complaint = chief_complaint.lower()
     findings: list[ClinicalFinding] = []
@@ -240,15 +309,19 @@ def assess_age_risk(patient: Patient, other_findings: list[ClinicalFinding]) -> 
 # ─── Full Deterministic Assessment ────────────────────────────────────────────
 
 
-def assess_patient(patient: Patient) -> list[ClinicalFinding]:
+def combine_findings(
+    patient: Patient,
+    vital_findings: list[ClinicalFinding],
+    symptom_findings: list[ClinicalFinding],
+) -> list[ClinicalFinding]:
     """
-    Run every deterministic check. No LLM call, no API cost.
+    Merge vital and symptom findings, then apply the age amplifier to the whole.
 
-    Runs before triage reasoning so the findings can be handed to the LLM as
-    context rather than competing with it.
+    Age risk has to be computed last, because it depends on whether *any* other
+    finding is present — and symptom findings are not known until after the
+    triage call has extracted them.
     """
-    findings = assess_vitals(patient.vitals)
-    findings.extend(assess_symptoms(patient.chief_complaint))
+    findings = [*vital_findings, *symptom_findings]
     findings.extend(assess_age_risk(patient, findings))
 
     logger.info(
@@ -258,6 +331,20 @@ def assess_patient(patient: Patient) -> list[ClinicalFinding]:
         sum(1 for f in findings if f.severity is FindingSeverity.CRITICAL),
     )
     return findings
+
+
+def assess_patient(patient: Patient) -> list[ClinicalFinding]:
+    """
+    Fully deterministic assessment — vitals, keyword symptoms, age.
+
+    This is the no-LLM path: used as the fallback when triage reasoning fails,
+    and as the entry point for tests that need findings without a model.
+    """
+    return combine_findings(
+        patient,
+        assess_vitals(patient.vitals),
+        assess_symptoms(patient.chief_complaint),
+    )
 
 
 # ─── Escalation Derivation ────────────────────────────────────────────────────

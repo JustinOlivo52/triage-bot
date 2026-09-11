@@ -18,16 +18,24 @@ from langchain_core.messages import SystemMessage, HumanMessage
 from langgraph.graph import StateGraph, START, END
 from pydantic import BaseModel, Field
 
-from config import ANTHROPIC_API_KEY, LLM_MODEL
+from config import ANTHROPIC_API_KEY, TRIAGE_MODEL
 from models import (
     ClinicalFinding,
+    ExtractedSymptom,
     Patient,
     PatientCard,
     TriageResult,
     TriageState,
     TriageStatus,
 )
-from agents.assessment import assess_patient, format_thresholds_for_prompt
+from agents.assessment import (
+    assess_symptoms,
+    assess_vitals,
+    combine_findings,
+    findings_from_extraction,
+    format_symptom_vocabulary_for_prompt,
+    format_thresholds_for_prompt,
+)
 from agents.escalation import build_escalation
 from rag.retriever import retrieve_triage_context
 
@@ -37,7 +45,16 @@ logger = logging.getLogger(__name__)
 # ─── Internal LLM Output Schema ──────────────────────────────────────────────
 
 class _TriageDecision(BaseModel):
-    """Structured output schema for the triage reasoning node."""
+    """
+    Structured output schema for the triage reasoning node.
+
+    Symptom extraction rides along on this call rather than taking one of its
+    own: the model is already reading the chief complaint to assign a score, so
+    reporting what it found there costs nothing extra.
+    """
+    extracted_symptoms: list[ExtractedSymptom] = Field(
+        description="Vocabulary symptoms the complaint mentions, each marked present, denied, or historical"
+    )
     esi_score: int                       = Field(ge=1, le=5, description="Final ESI score 1–5")
     esi_rationale: str                   = Field(description="Why this ESI level was assigned per ESI v4 criteria")
     clinical_reasoning: str              = Field(description="Full clinical reasoning narrative for this patient")
@@ -47,9 +64,9 @@ class _TriageDecision(BaseModel):
 # ─── LLM Initializer ─────────────────────────────────────────────────────────
 
 def _get_llm() -> ChatAnthropic:
-    """Return a configured Claude instance."""
+    """Return the Claude instance used for ESI scoring."""
     return ChatAnthropic(
-        model=LLM_MODEL,
+        model=TRIAGE_MODEL,
         api_key=ANTHROPIC_API_KEY,
         temperature=0,
     )
@@ -59,33 +76,39 @@ def _get_llm() -> ChatAnthropic:
 
 def assess_node(state: TriageState) -> TriageState:
     """
-    Run the rule-based clinical checks. No LLM call, no API cost.
+    Check the vital signs against the threshold tiers. No LLM call, no API cost.
 
-    Runs first so the findings can be handed to the triage LLM as context.
+    Vitals only. Symptoms come from structured extraction in triage_node, and
+    age risk is applied in escalate_node once both are known. Thresholds stay
+    deterministic here on purpose: a number against a number is not a judgment
+    call, and it should not be delegated to a model.
     """
     patient: Patient = state["patient"]
     logger.info("assess_node — %s", patient.patient_id)
 
-    return {**state, "findings": assess_patient(patient)}
+    return {**state, "vital_findings": assess_vitals(patient.vitals)}
 
 
 # ─── Node 2 — Triage Reasoning ───────────────────────────────────────────────
 
 def _format_findings(findings: list[ClinicalFinding]) -> str:
     if not findings:
-        return "None. All vitals within range and no keyword-matched symptoms."
+        return "None. All vital signs within range."
     return "\n".join(f"- [{f.severity.value}] {f.detail}" for f in findings)
 
 
 def triage_node(state: TriageState) -> TriageState:
     """
-    Assign an ESI score, grounded in retrieved guidelines and informed by the
-    deterministic findings from assess_node.
+    Assign an ESI score and extract symptom status from the chief complaint.
+
+    Two jobs, one call: the model has to read the complaint to score it anyway,
+    so it also reports which vocabulary symptoms the text asserts, denies, or
+    places in the past.
 
     Every patient reaches this node. There is no path that skips scoring.
     """
     patient: Patient = state["patient"]
-    findings: list[ClinicalFinding] = state.get("findings", [])
+    vital_findings: list[ClinicalFinding] = state.get("vital_findings", [])
     logger.info("triage_node — reasoning for %s", patient.patient_id)
 
     rag_context, context_found = retrieve_triage_context(patient.chief_complaint)
@@ -104,14 +127,34 @@ ESI SCORING GUIDE:
 VITAL SIGN THRESHOLDS (adult ranges):
 {format_thresholds_for_prompt()}
 
-The automated findings below come from a keyword and threshold scan. Treat them
-as a checklist, not a conclusion. In particular, the symptom scan cannot detect
-negation or history, so a finding of "chest pain" may reflect a complaint of
-"denies chest pain" or "history of chest pain". Read the chief complaint yourself
-and disregard any finding the text does not actually support.
+The vital sign findings below are measured values compared against those
+thresholds. They are reliable — treat them as fact.
 
-Assign the ESI score that most accurately reflects the patient's acuity.
-Recommend specific, actionable nursing interventions appropriate to the ESI level."""
+SYMPTOM EXTRACTION
+
+Separately, report the status of any symptom from this vocabulary that the
+chief complaint mentions:
+
+{format_symptom_vocabulary_for_prompt()}
+
+For each vocabulary term the complaint refers to in any form, return one of:
+- "present"    — the patient has this now
+- "denied"     — the complaint explicitly says the patient does NOT have it
+                 ("denies chest pain", "no shortness of breath")
+- "historical" — it refers to a past episode, not this presentation
+                 ("history of stroke in 2019")
+
+Rules:
+- Use the vocabulary terms exactly as written above. Do not invent new terms.
+- Omit any term the complaint does not refer to at all. An empty list is correct
+  for a complaint that mentions none of them.
+- Status reflects only what the text says. Do not infer a symptom the patient
+  did not report, and do not upgrade a denial into a presence because the vital
+  signs look concerning.
+
+Then assign the ESI score that most accurately reflects the patient's acuity,
+and recommend specific, actionable nursing interventions appropriate to that
+level."""
 
     patient_data = f"""
 PATIENT:
@@ -127,8 +170,8 @@ VITAL SIGNS:
 - SpO2: {patient.vitals.spo2}%
 - Temperature: {patient.vitals.temperature_c}°C ({patient.vitals.temperature_f}°F)
 
-AUTOMATED FINDINGS:
-{_format_findings(findings)}
+MEASURED VITAL SIGN FINDINGS:
+{_format_findings(vital_findings)}
 
 CLINICAL REFERENCE CONTEXT:
 {rag_context}
@@ -150,9 +193,18 @@ CLINICAL REFERENCE CONTEXT:
             clinical_reasoning=decision.clinical_reasoning,
             recommended_interventions=decision.recommended_interventions,
             retrieval_context_used=context_found,
+            extracted_symptoms=decision.extracted_symptoms,
         )
-        logger.info("triage_node — ESI %d assigned to %s", decision.esi_score, patient.patient_id)
-        return {**state, "triage_result": triage_result, "retrieval_context": rag_context}
+        logger.info(
+            "triage_node — ESI %d assigned to %s (%d symptom(s) extracted)",
+            decision.esi_score, patient.patient_id, len(decision.extracted_symptoms),
+        )
+        return {
+            **state,
+            "triage_result": triage_result,
+            "symptom_findings": findings_from_extraction(decision.extracted_symptoms),
+            "retrieval_context": rag_context,
+        }
 
     except Exception as e:
         # No score is better than a fabricated one. escalate_node turns a missing
@@ -162,6 +214,10 @@ CLINICAL REFERENCE CONTEXT:
         return {
             **state,
             "triage_result": None,
+            # Fall back to the naive substring scan. It cannot handle negation,
+            # but losing symptom detection entirely on an already-degraded path
+            # would be worse than a few false positives.
+            "symptom_findings": assess_symptoms(patient.chief_complaint),
             "retrieval_context": rag_context,
             "system_error": f"{type(e).__name__}: {e}",
         }
@@ -171,12 +227,22 @@ CLINICAL REFERENCE CONTEXT:
 
 def escalate_node(state: TriageState) -> TriageState:
     """
-    Derive the escalation level from the ESI score and the deterministic
-    findings, and generate a physician summary when it is IMMEDIATE.
+    Combine the measured vital findings with the extracted symptom findings,
+    apply the age amplifier to the result, then derive the escalation level and
+    generate a physician summary when it is IMMEDIATE.
+
+    Age risk is applied here rather than in assess_node because it depends on
+    whether any other finding exists, and symptom findings are not known until
+    triage_node has extracted them.
     """
     patient: Patient = state["patient"]
     triage_result: TriageResult | None = state.get("triage_result")
-    findings: list[ClinicalFinding] = state.get("findings", [])
+
+    findings = combine_findings(
+        patient,
+        state.get("vital_findings", []),
+        state.get("symptom_findings", []),
+    )
 
     escalation = build_escalation(
         patient=patient,
@@ -189,7 +255,7 @@ def escalate_node(state: TriageState) -> TriageState:
         TriageStatus.ESCALATED if escalation.triggered else TriageStatus.TRIAGED
     )
 
-    return {**state, "patient": patient, "escalation": escalation}
+    return {**state, "patient": patient, "findings": findings, "escalation": escalation}
 
 
 # ─── Node 4 — Patient Card Builder ───────────────────────────────────────────
@@ -242,6 +308,8 @@ def run_triage(patient: Patient) -> PatientCard:
 
     initial_state: TriageState = {
         "patient": patient,
+        "vital_findings": [],
+        "symptom_findings": [],
         "findings": [],
         "triage_result": None,
         "escalation": None,

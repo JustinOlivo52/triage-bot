@@ -19,7 +19,22 @@ CHROMA_DIR = BASE_DIR / "chroma_db"
 # ─── Anthropic ────────────────────────────────────────────────────────────────
 
 ANTHROPIC_API_KEY: str = os.getenv("ANTHROPIC_API_KEY", "")
-LLM_MODEL: str = "claude-sonnet-4-6"
+
+# Two models, because the two call sites have different requirements.
+#
+# TRIAGE_MODEL performs the actual clinical judgment: reading the complaint,
+# weighing it against the vitals, and assigning an ESI level. Under-triage is
+# the dangerous failure mode here, so this call gets the more capable model.
+#
+# SUMMARY_MODEL writes the physician alert narrative. By the time it runs, the
+# escalation decision and the ESI score are already settled by the rules and
+# the triage call — it is composing prose from established facts.
+#
+# Which model is *correct* for each role is not yet measured. These are
+# reasoned defaults, not validated ones; the eval harness is what will turn
+# them into an evidence-based choice.
+TRIAGE_MODEL: str = "claude-opus-5"
+SUMMARY_MODEL: str = "claude-sonnet-5"
 
 # ─── Embeddings ───────────────────────────────────────────────────────────────
 

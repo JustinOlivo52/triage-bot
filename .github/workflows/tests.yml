@@ -1,0 +1,29 @@
+name: tests
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      # Only what the deterministic clinical rules need. The full stack
+      # (langchain, chromadb, torch) is deliberately not installed here: if
+      # these tests ever start requiring it, the pure logic has leaked a
+      # dependency and this job should fail.
+      - name: Install test dependencies
+        run: pip install pydantic python-dotenv pytest
+
+      - name: Run tests
+        run: pytest
+        env:
+          ANTHROPIC_API_KEY: ""

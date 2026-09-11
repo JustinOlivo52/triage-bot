@@ -18,7 +18,7 @@ from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import SystemMessage, HumanMessage
 from pydantic import BaseModel, Field
 
-from config import ANTHROPIC_API_KEY, LLM_MODEL
+from config import ANTHROPIC_API_KEY, SUMMARY_MODEL
 from models import (
     ClinicalFinding,
     EscalationAssessment,
@@ -44,9 +44,9 @@ class _SummaryContent(BaseModel):
 
 
 def _get_llm() -> ChatAnthropic:
-    """Return a configured Claude instance."""
+    """Return the Claude instance used for physician alert narrative."""
     return ChatAnthropic(
-        model=LLM_MODEL,
+        model=SUMMARY_MODEL,
         api_key=ANTHROPIC_API_KEY,
         temperature=0,
     )

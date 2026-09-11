@@ -28,6 +28,19 @@ class FindingCategory(str, Enum):
     AGE     = "age"
 
 
+class SymptomStatus(str, Enum):
+    """
+    What the chief complaint actually says about a symptom.
+
+    A substring scan cannot tell these apart — "denies chest pain" and "chest
+    pain" look identical to it. Structured extraction reports the distinction
+    so only PRESENT symptoms become findings.
+    """
+    PRESENT    = "present"     # the patient has this now
+    DENIED     = "denied"      # the complaint explicitly rules it out
+    HISTORICAL = "historical"  # a past episode, not this presentation
+
+
 class EscalationLevel(str, Enum):
     """
     How urgently this patient needs attention beyond their queue position.
@@ -144,6 +157,21 @@ class PhysicianSummary(BaseModel):
     recommended_actions: list[str] = Field(..., description="Immediate actions the physician should consider")
 
 
+class ExtractedSymptom(BaseModel):
+    """
+    One symptom the model recognised in the chief complaint, with its status.
+
+    `symptom` is constrained to the vocabulary in config.py rather than free
+    text, so severity mapping stays deterministic and auditable.
+    """
+
+    symptom: str        = Field(..., description="Term from the supplied symptom vocabulary")
+    status: SymptomStatus = Field(..., description="Whether the complaint asserts, denies, or historicises it")
+
+    def __str__(self) -> str:
+        return f"{self.symptom} ({self.status.value})"
+
+
 class ClinicalFinding(BaseModel):
     """A single deterministic finding produced by the rule-based assessment."""
 
@@ -205,6 +233,11 @@ class TriageResult(BaseModel):
     is_fallback: bool                  = Field(
         default=False,
         description="True when this score came from a failure path rather than clinical reasoning",
+    )
+    extracted_symptoms: list[ExtractedSymptom] = Field(
+        default_factory=list,
+        description="Symptoms recognised in the complaint, with present/denied/historical status. "
+                    "Retained for audit and eval: it records what the model believed it read.",
     )
 
     @field_validator("esi_score")
@@ -269,7 +302,9 @@ class TriageState(TypedDict, total=False):
     """
 
     patient: Patient
-    findings: list[ClinicalFinding]           # deterministic, from assess_node
+    vital_findings: list[ClinicalFinding]     # measured, from assess_node
+    symptom_findings: list[ClinicalFinding]   # extracted, from triage_node
+    findings: list[ClinicalFinding]           # combined + age risk, from escalate_node
     triage_result: Optional[TriageResult]     # ESI score, from triage_node
     escalation: Optional[EscalationAssessment]  # derived, from escalate_node
     patient_card: Optional[PatientCard]

@@ -1,0 +1,9 @@
+# Development and test dependencies.
+#
+# Deliberately minimal: the clinical rules in agents/assessment.py have no LLM,
+# network, or embedding dependency, so their tests need nothing from
+# requirements.txt beyond pydantic and python-dotenv.
+
+-r requirements.txt
+
+pytest>=8.0.0

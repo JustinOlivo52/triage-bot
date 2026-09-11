@@ -32,6 +32,16 @@ assess (deterministic)  →  triage (ESI 1–5)  →  escalate (derived)  →  p
 | `CRITICAL` | Warrants a physician now, independent of ESI | HR > 130, SpO2 < 90, SBP < 90 |
 | `CONCERNING` | Outside normal range, raises concern | HR > 100, SpO2 < 94, temp > 38.5 °C |
 
+**Symptoms** are extracted, not keyword-matched. The triage call reports the status of each vocabulary term the complaint mentions, so `denies chest pain` and `history of stroke in 2019` produce no finding:
+
+| Status | Becomes a finding? |
+|--------|--------------------|
+| `present` | Yes |
+| `denied` | No — recorded for audit only |
+| `historical` | No — recorded for audit only |
+
+Extraction rides on the existing triage call rather than taking one of its own, so it costs no extra request. The vocabulary is supplied from `config.py` and severity is mapped on our side, which keeps the mapping deterministic and stops an out-of-vocabulary hallucination from becoming a finding of unknown weight.
+
 **Escalation** is a pure function of the ESI score and those findings:
 
 | Level | Rule |
@@ -79,7 +89,7 @@ LangGraph StateGraph  —  linear, every patient traverses every node
 |-------|-----------|
 | UI | Streamlit |
 | Orchestration | LangGraph + LangChain |
-| LLM | Anthropic Claude (`claude-sonnet-4-6`) |
+| LLM | Anthropic Claude — `claude-opus-5` for ESI scoring, `claude-sonnet-5` for alert narrative |
 | RAG / Vector Store | ChromaDB (local, persistent) |
 | Embeddings | HuggingFace `all-MiniLM-L6-v2` (CPU, no API cost) |
 | Document Loading | PyMuPDF (`fitz`) |
@@ -101,7 +111,13 @@ triage-bot/
 ├── agents/
 │   ├── assessment.py        # Deterministic clinical rules + escalation logic (pure, no LLM)
 │   ├── escalation.py        # Escalation assembly + physician alert generation
-│   └── triage_agent.py      # LangGraph StateGraph + triage node
+│   └── triage_agent.py      # LangGraph StateGraph + triage/extraction node
+│
+├── tests/
+│   └── test_assessment.py   # Clinical rule tests — no API key, no network
+│
+├── .github/workflows/
+│   └── tests.yml            # CI: runs the suite on minimal dependencies
 │
 ├── rag/
 │   ├── ingest.py            # PDF loading, chunking, embedding, ChromaDB ingestion
@@ -150,10 +166,24 @@ streamlit run main.py
 
 ---
 
+## Tests
+
+```bash
+pip install -r requirements-dev.txt
+pytest
+```
+
+The clinical rules in `agents/assessment.py` are pure functions with no LLM, network, or embedding dependency, so the suite runs in well under a second and needs **no API key**. CI installs only `pydantic`, `python-dotenv` and `pytest` — if these tests ever start needing the full stack, the pure logic has leaked a dependency and the build fails.
+
+Coverage is the deterministic core: threshold tiering and boundary conditions, the extraction-to-findings mapping (including out-of-vocabulary rejection), age amplification, and escalation derivation. The confirmed false positives that motivated the rewrite are pinned as regression tests.
+
+---
+
 ## Key Features
 
 - **Every patient gets a score** — escalation is reported alongside the ESI level, never instead of it
-- **Testable clinical rules** — all threshold and escalation logic lives in `agents/assessment.py` as pure functions with no LLM or network dependency
+- **Negation-aware symptom handling** — "denies chest pain" and "history of stroke in 2019" are read as what they are, via structured extraction on the existing triage call
+- **Testable clinical rules** — all threshold and escalation logic lives in `agents/assessment.py` as pure functions with no LLM or network dependency, covered by a test suite that runs in CI without an API key
 - **Single source of truth for thresholds** — the triage prompt renders its vital-sign ranges from `config.py`, so the prompt cannot drift from the code
 - **Two-tier severity** — critical and concerning findings are distinguished rather than collapsed into one binary flag
 - **Cost-aware escalation** — only `IMMEDIATE` patients trigger a physician-summary LLM call
@@ -176,9 +206,10 @@ streamlit run main.py
 - [x] System failures distinguished from clinical alerts
 - [x] `.env.example` and setup documentation
 
+- [x] Structured symptom extraction handling negation and history
+- [x] Test suite over the deterministic clinical rules, running in CI
+
 **Next**
-- [ ] Structured symptom extraction to replace keyword matching (handles negation and history)
-- [ ] Unit and integration test suite
 - [ ] Eval set of clinician-scored vignettes with a measured agreement rate
 - [ ] Atomic writes and a single cached read per render in the patient store
 - [ ] Nurse annotation / override workflow
@@ -191,10 +222,10 @@ streamlit run main.py
 
 ## Known Limitations
 
-- **Symptom matching is a substring scan.** It cannot distinguish "chest pain" from "denies chest pain" or "history of chest pain". The keyword lists are kept narrow to limit false positives, and the triage prompt instructs the model to disregard findings the complaint does not support, but the scan itself is still naive. Structured extraction is the next item on the roadmap.
 - **Vital thresholds are adult values.** They are applied to all ages. A well 3-year-old sits around HR 110 / RR 26 and will register as tachycardic and tachypneic.
 - **Writes are not atomic.** A crash mid-write can corrupt the patient store.
-- **No accuracy measurement yet.** There is no eval set, so the system's agreement with expert ESI assignment is currently unknown.
+- **No accuracy measurement yet.** There is no eval set, so the system's agreement with expert ESI assignment is currently unknown. Model choice per role is a reasoned default, not a measured one.
+- **The fallback scan is naive.** If the triage call fails, symptom detection degrades to the substring scan, which cannot handle negation. This is deliberate — a few false positives beat losing symptom detection entirely on an already-degraded path — but findings on a system-error card should be read with that in mind.
 
 ---
 

@@ -15,6 +15,7 @@ from models import (
     FindingSeverity,
     Patient,
     PatientCard,
+    SymptomStatus,
     TriageStatus,
     VitalSigns,
 )
@@ -82,6 +83,12 @@ _ESCALATION_CSS = {
 _SEVERITY_STYLE = {
     FindingSeverity.CRITICAL: ("vital-critical", " ▲ CRITICAL"),
     FindingSeverity.CONCERNING: ("vital-concerning", " △ abnormal"),
+}
+
+_SYMPTOM_STATUS_MARK = {
+    SymptomStatus.PRESENT: "🔴",
+    SymptomStatus.DENIED: "⚪",
+    SymptomStatus.HISTORICAL: "🕓",
 }
 
 
@@ -279,6 +286,21 @@ def _render_patient_card(card: PatientCard) -> None:
                     "Note: no clinical reference context was retrieved for this "
                     "patient. Reasoning relies on the model's training knowledge."
                 )
+
+        # Shows what the system believed it read in the complaint, and which of
+        # those actually carried clinical weight. A denied or historical symptom
+        # is recorded but deliberately produces no finding.
+        if result.extracted_symptoms:
+            with st.expander(f"Symptom Extraction ({len(result.extracted_symptoms)})"):
+                st.caption(
+                    "Only symptoms marked *present* become findings. Denied and "
+                    "historical mentions are recorded but carry no clinical weight."
+                )
+                for extracted in result.extracted_symptoms:
+                    st.markdown(
+                        f"{_SYMPTOM_STATUS_MARK[extracted.status]} "
+                        f"**{extracted.symptom}** — {extracted.status.value}"
+                    )
 
     # ── Prior Visit History ────────────────────────────────────────────────────
     if p.is_returning:
