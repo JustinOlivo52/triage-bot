@@ -4,6 +4,7 @@ Used by the triage agent to ground LLM reasoning in clinical guidelines.
 """
 
 import logging
+
 from langchain_core.documents import Document
 from langchain_community.vectorstores import Chroma
 
@@ -11,6 +12,13 @@ from config import RETRIEVAL_K
 from rag.ingest import load_vector_store, vector_store_exists
 
 logger = logging.getLogger(__name__)
+
+NO_CONTEXT_MESSAGE = "No clinical reference context available."
+
+# Cached store handle. Loading it constructs the embedding model, which is
+# expensive enough that doing it per query dominates triage latency. A failed
+# lookup is deliberately not cached, so a store built later is picked up.
+_store: Chroma | None = None
 
 
 # ─── Store Access ─────────────────────────────────────────────────────────────
@@ -20,10 +28,23 @@ def get_vector_store() -> Chroma | None:
     Return the ChromaDB vector store if it exists, otherwise None.
     Callers are responsible for handling the None case gracefully.
     """
+    global _store
+
+    if _store is not None:
+        return _store
+
     if not vector_store_exists():
-        logger.warning("No vector store found — RAG context will be unavailable")
+        logger.warning("No vector store found — retrieval context will be unavailable")
         return None
-    return load_vector_store()
+
+    _store = load_vector_store()
+    return _store
+
+
+def reset_vector_store_cache() -> None:
+    """Drop the cached store handle. Call after a re-ingest."""
+    global _store
+    _store = None
 
 
 # ─── Retrieval ────────────────────────────────────────────────────────────────
@@ -31,7 +52,7 @@ def get_vector_store() -> Chroma | None:
 def retrieve(query: str, k: int = RETRIEVAL_K) -> list[Document]:
     """
     Run similarity search against ChromaDB and return the top-k Documents.
-    Returns an empty list if no vector store exists.
+    Returns an empty list if no vector store exists or the search fails.
     """
     store = get_vector_store()
     if store is None:
@@ -68,17 +89,16 @@ def retrieve_with_scores(query: str, k: int = RETRIEVAL_K) -> list[tuple[Documen
 
 def format_context(documents: list[Document]) -> str:
     """
-    Format a list of retrieved Documents into a clean context block
-    ready to inject into an LLM prompt.
+    Format retrieved Documents into a context block ready for prompt injection.
     Each chunk is labeled with its source and page number.
     """
     if not documents:
-        return "No clinical reference context available."
+        return NO_CONTEXT_MESSAGE
 
     sections: list[str] = []
     for i, doc in enumerate(documents, start=1):
         source = doc.metadata.get("source", "Unknown source")
-        page   = doc.metadata.get("page", "?")
+        page = doc.metadata.get("page", "?")
         sections.append(
             f"[Reference {i} — {source}, p.{page}]\n{doc.page_content.strip()}"
         )
@@ -88,41 +108,25 @@ def format_context(documents: list[Document]) -> str:
 
 # ─── Primary Interface ────────────────────────────────────────────────────────
 
-def retrieve_context(query: str, k: int = RETRIEVAL_K) -> str:
+def retrieve_context(query: str, k: int = RETRIEVAL_K) -> tuple[str, bool]:
     """
-    Single call used by the triage agent — retrieves top-k chunks
-    and returns them as a formatted context string for prompt injection.
+    Retrieve top-k chunks as a formatted context string.
+
+    Returns (context, found). The boolean matters: on a miss the context string
+    is a human-readable placeholder, which is truthy, so callers cannot infer
+    grounding from the string alone.
     """
     documents = retrieve(query, k=k)
-    return format_context(documents)
+    return format_context(documents), bool(documents)
 
 
-def retrieve_red_flag_context(patient_age: int, chief_complaint: str) -> str:
+def retrieve_triage_context(chief_complaint: str) -> tuple[str, bool]:
     """
-    Targeted retrieval for the red flag Layer 3 LLM reasoning node.
-    Builds a composite query from patient age and complaint to pull
-    the most clinically relevant guidelines for risk assessment.
-    """
-    age_group = (
-        "pediatric patient" if patient_age <= 5
-        else "geriatric patient" if patient_age >= 65
-        else "adult patient"
-    )
-    query = (
-        f"{age_group} presenting with {chief_complaint} — "
-        f"emergency triage risk assessment red flag criteria"
-    )
-    return retrieve_context(query)
-
-
-def retrieve_triage_context(chief_complaint: str, esi_hint: str = "") -> str:
-    """
-    Targeted retrieval for the standard LLM triage reasoning node.
-    Pulls ESI scoring criteria and clinical decision guidelines
-    relevant to the patient's chief complaint.
+    Targeted retrieval for the triage reasoning node. Pulls ESI scoring criteria
+    and clinical decision guidelines relevant to the chief complaint.
     """
     query = (
         f"ESI triage scoring criteria for {chief_complaint} "
-        f"{esi_hint} emergency severity index guidelines"
+        f"emergency severity index guidelines"
     )
     return retrieve_context(query)

@@ -163,12 +163,14 @@ class PatientStore:
 
     def get_queue(self) -> list[PatientCard]:
         """
-        Return only patients whose status is PENDING or RED_FLAGGED —
-        i.e., the active triage queue, not fully resolved patients.
+        Return the active triage queue: everyone not yet dispositioned.
+
+        A patient leaves the queue when a clinician resolves them, not when the
+        pipeline finishes scoring them.
         """
         return [
             c for c in self.get_all_cards()
-            if c.patient.status in (TriageStatus.PENDING, TriageStatus.RED_FLAGGED)
+            if c.patient.status is not TriageStatus.RESOLVED
         ]
 
     def search_by_name(self, name: str) -> list[PatientCard]:
@@ -186,16 +188,20 @@ class PatientStore:
     # ── Stats ─────────────────────────────────────────────────────────────────
 
     def queue_stats(self) -> dict:
-        """
-        Return a summary dict used by the Streamlit dashboard header.
-        Counts total, red flagged, triaged, and pending patients.
-        """
+        """Return a summary dict used by the Streamlit dashboard header."""
         all_cards = self.get_all_cards()
+        active = [c for c in all_cards if c.patient.status is not TriageStatus.RESOLVED]
         return {
             "total": len(all_cards),
-            "red_flagged": sum(1 for c in all_cards if c.is_red_flagged),
-            "triaged": sum(1 for c in all_cards if c.patient.status == TriageStatus.TRIAGED),
-            "pending": sum(1 for c in all_cards if c.patient.status == TriageStatus.PENDING),
+            "active": len(active),
+            "immediate": sum(1 for c in active if c.needs_immediate_attention),
+            "elevated": sum(
+                1 for c in active
+                if c.is_escalated and not c.needs_immediate_attention
+            ),
+            "routine": sum(1 for c in active if not c.is_escalated and c.triage_result),
+            "pending": sum(1 for c in active if c.patient.status is TriageStatus.PENDING),
+            "system_errors": sum(1 for c in all_cards if c.has_system_error),
         }
 
     # ── Admin ─────────────────────────────────────────────────────────────────

@@ -4,6 +4,7 @@ Run directly to force a full re-ingest: python -m rag.ingest
 """
 
 import logging
+from functools import lru_cache
 from pathlib import Path
 
 import fitz  # PyMuPDF
@@ -83,8 +84,14 @@ def split_documents(documents: list[Document]) -> list[Document]:
 
 # ─── Embeddings ───────────────────────────────────────────────────────────────
 
+@lru_cache(maxsize=1)
 def get_embeddings() -> HuggingFaceEmbeddings:
-    """Initialize local HuggingFace embeddings — no API call, no cost."""
+    """
+    Initialize local HuggingFace embeddings — no API call, no cost.
+
+    Cached: constructing this loads a sentence-transformer model into memory.
+    Doing that per query made retrieval latency dominate every triage run.
+    """
     return HuggingFaceEmbeddings(
         model_name=EMBEDDING_MODEL,
         model_kwargs={"device": "cpu"},
@@ -127,26 +134,34 @@ def vector_store_exists() -> bool:
 
 # ─── Ingestion Orchestrator ───────────────────────────────────────────────────
 
-def ingest(force: bool = False) -> Chroma:
+def ingest(force: bool = False) -> Chroma | None:
     """
     Full ingestion pipeline: load → chunk → embed → store.
 
     Skips ingestion and loads from disk if the vector store already exists.
     Pass force=True to re-ingest after adding new documents to /data.
+
+    Returns None when there is nothing to ingest. Building an empty store
+    instead would load the embedding model for no reason, which turns a
+    missing-guidelines setup into a hard startup failure — the app is supposed
+    to run ungrounded in that case, not crash.
     """
     if vector_store_exists() and not force:
         logger.info("Vector store found on disk — loading existing store")
         return load_vector_store()
 
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-    CHROMA_DIR.mkdir(parents=True, exist_ok=True)
 
     documents = load_documents()
 
     if not documents:
-        logger.warning("No documents ingested — returning empty store")
-        return load_vector_store()
+        logger.warning(
+            "No documents found in %s — skipping ingestion. Triage will run "
+            "without retrieved clinical context.", DATA_DIR,
+        )
+        return None
 
+    CHROMA_DIR.mkdir(parents=True, exist_ok=True)
     chunks = split_documents(documents)
     return build_vector_store(chunks)
 

@@ -1,22 +1,34 @@
 """
 agents/triage_agent.py — LangGraph StateGraph orchestrating the full triage pipeline.
 
-Graph flow:
-    START
-      └─► red_flag_node
-            ├─► (if flagged)  build_card_node ──► END
-            └─► (if clear)    triage_node ──► build_card_node ──► END
+Graph flow (linear — every patient traverses every node):
+
+    START ─► assess_node ─► triage_node ─► escalate_node ─► build_card_node ─► END
+
+Why linear: acuity scoring and escalation are one clinical judgment, not two
+competing branches. Every patient gets an ESI score. Escalation is derived from
+that score plus the deterministic findings, and is reported alongside the score
+rather than instead of it.
 """
 
 import logging
-from pydantic import BaseModel, Field
+
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import SystemMessage, HumanMessage
 from langgraph.graph import StateGraph, START, END
+from pydantic import BaseModel, Field
 
 from config import ANTHROPIC_API_KEY, LLM_MODEL
-from models import Patient, TriageResult, PatientCard, TriageStatus, TriageState
-from agents.red_flag import evaluate_red_flag
+from models import (
+    ClinicalFinding,
+    Patient,
+    PatientCard,
+    TriageResult,
+    TriageState,
+    TriageStatus,
+)
+from agents.assessment import assess_patient, format_thresholds_for_prompt
+from agents.escalation import build_escalation
 from rag.retriever import retrieve_triage_context
 
 logger = logging.getLogger(__name__)
@@ -25,7 +37,7 @@ logger = logging.getLogger(__name__)
 # ─── Internal LLM Output Schema ──────────────────────────────────────────────
 
 class _TriageDecision(BaseModel):
-    """Structured output schema for the standard triage LLM reasoning node."""
+    """Structured output schema for the triage reasoning node."""
     esi_score: int                       = Field(ge=1, le=5, description="Final ESI score 1–5")
     esi_rationale: str                   = Field(description="Why this ESI level was assigned per ESI v4 criteria")
     clinical_reasoning: str              = Field(description="Full clinical reasoning narrative for this patient")
@@ -43,49 +55,44 @@ def _get_llm() -> ChatAnthropic:
     )
 
 
-# ─── Node 1 — Red Flag Evaluation ────────────────────────────────────────────
+# ─── Node 1 — Deterministic Assessment ───────────────────────────────────────
 
-def red_flag_node(state: TriageState) -> TriageState:
+def assess_node(state: TriageState) -> TriageState:
     """
-    Run the three-layer red flag evaluation.
-    Writes red_flag_alert and esi_estimate back to state.
-    If flagged, updates patient status to RED_FLAGGED.
+    Run the rule-based clinical checks. No LLM call, no API cost.
+
+    Runs first so the findings can be handed to the triage LLM as context.
     """
     patient: Patient = state["patient"]
-    logger.info("red_flag_node — evaluating %s", patient.patient_id)
+    logger.info("assess_node — %s", patient.patient_id)
 
-    alert, esi_estimate = evaluate_red_flag(patient)
-
-    if alert.triggered:
-        patient.status = TriageStatus.RED_FLAGGED
-
-    return {
-        **state,
-        "patient": patient,
-        "red_flag_alert": alert,
-        "retrieval_context": "",
-        "esi_estimate": esi_estimate,
-    }
+    return {**state, "findings": assess_patient(patient)}
 
 
-# ─── Node 2 — Standard Triage Reasoning ──────────────────────────────────────
+# ─── Node 2 — Triage Reasoning ───────────────────────────────────────────────
+
+def _format_findings(findings: list[ClinicalFinding]) -> str:
+    if not findings:
+        return "None. All vitals within range and no keyword-matched symptoms."
+    return "\n".join(f"- [{f.severity.value}] {f.detail}" for f in findings)
+
 
 def triage_node(state: TriageState) -> TriageState:
     """
-    LLM triage reasoning for patients who cleared the red flag gate.
-    Pulls RAG context, assigns final ESI score, and generates clinical reasoning.
+    Assign an ESI score, grounded in retrieved guidelines and informed by the
+    deterministic findings from assess_node.
+
+    Every patient reaches this node. There is no path that skips scoring.
     """
     patient: Patient = state["patient"]
-    esi_hint = str(state.get("esi_estimate", "")) if state.get("esi_estimate") else ""
+    findings: list[ClinicalFinding] = state.get("findings", [])
     logger.info("triage_node — reasoning for %s", patient.patient_id)
 
-    rag_context = retrieve_triage_context(patient.chief_complaint, esi_hint)
+    rag_context, context_found = retrieve_triage_context(patient.chief_complaint)
 
-    llm = _get_llm().with_structured_output(_TriageDecision)
+    system_prompt = f"""You are an experienced emergency triage nurse applying the ESI (Emergency Severity Index) v4 framework.
 
-    system_prompt = """You are an experienced emergency triage nurse applying the ESI (Emergency Severity Index) v4 framework.
-
-Your task is to assign a final ESI score and provide structured clinical reasoning for the patient.
+Assign a final ESI score and provide structured clinical reasoning.
 
 ESI SCORING GUIDE:
 - ESI 1: Requires immediate life-saving intervention
@@ -94,21 +101,23 @@ ESI SCORING GUIDE:
 - ESI 4: Stable, requires exactly 1 resource
 - ESI 5: Stable, no resources needed — can be seen and discharged
 
-VITAL SIGN DANGER ZONES (auto-escalate ESI if present):
-- HR > 100 or < 60
-- RR > 20
-- SpO2 < 94%
-- SBP < 90 or > 180
-- Temp > 38.5°C or < 36°C
+VITAL SIGN THRESHOLDS (adult ranges):
+{format_thresholds_for_prompt()}
+
+The automated findings below come from a keyword and threshold scan. Treat them
+as a checklist, not a conclusion. In particular, the symptom scan cannot detect
+negation or history, so a finding of "chest pain" may reflect a complaint of
+"denies chest pain" or "history of chest pain". Read the chief complaint yourself
+and disregard any finding the text does not actually support.
 
 Assign the ESI score that most accurately reflects the patient's acuity.
 Recommend specific, actionable nursing interventions appropriate to the ESI level."""
 
     patient_data = f"""
 PATIENT:
-- Name: {patient.name}
+- ID: {patient.patient_id}
 - Age: {patient.age} ({patient.age_group})
-- Weight: {patient.weight_kg} kg ({patient.weight_lbs} lbs)
+- Weight: {patient.weight_kg} kg
 - Chief Complaint: {patient.chief_complaint}
 
 VITAL SIGNS:
@@ -118,11 +127,18 @@ VITAL SIGNS:
 - SpO2: {patient.vitals.spo2}%
 - Temperature: {patient.vitals.temperature_c}°C ({patient.vitals.temperature_f}°F)
 
+AUTOMATED FINDINGS:
+{_format_findings(findings)}
+
 CLINICAL REFERENCE CONTEXT:
 {rag_context}
 """
 
     try:
+        # Client construction is inside the try: a missing or malformed API key
+        # fails here, not at invoke, and must reach the fail-safe path below
+        # rather than crashing the graph.
+        llm = _get_llm().with_structured_output(_TriageDecision)
         decision: _TriageDecision = llm.invoke([
             SystemMessage(content=system_prompt),
             HumanMessage(content=patient_data),
@@ -133,84 +149,83 @@ CLINICAL REFERENCE CONTEXT:
             esi_rationale=decision.esi_rationale,
             clinical_reasoning=decision.clinical_reasoning,
             recommended_interventions=decision.recommended_interventions,
-            retrieval_context_used=bool(rag_context),
+            retrieval_context_used=context_found,
         )
-
-        patient.status = TriageStatus.TRIAGED
         logger.info("triage_node — ESI %d assigned to %s", decision.esi_score, patient.patient_id)
+        return {**state, "triage_result": triage_result, "retrieval_context": rag_context}
 
     except Exception as e:
+        # No score is better than a fabricated one. escalate_node turns a missing
+        # score into an IMMEDIATE escalation flagged as a system error, so the
+        # patient surfaces for manual triage rather than sitting on a guess.
         logger.error("triage_node LLM call failed for %s: %s", patient.patient_id, e)
-        triage_result = TriageResult(
-            esi_score=3,
-            esi_rationale="Automated triage failed — defaulting to ESI 3 pending manual review.",
-            clinical_reasoning=str(e),
-            recommended_interventions=["Manual triage review required."],
-            retrieval_context_used=False,
-        )
-
-    return {
-        **state,
-        "patient": patient,
-        "triage_result": triage_result,
-        "retrieval_context": rag_context,
-    }
+        return {
+            **state,
+            "triage_result": None,
+            "retrieval_context": rag_context,
+            "system_error": f"{type(e).__name__}: {e}",
+        }
 
 
-# ─── Node 3 — Patient Card Builder ───────────────────────────────────────────
+# ─── Node 3 — Escalation ─────────────────────────────────────────────────────
+
+def escalate_node(state: TriageState) -> TriageState:
+    """
+    Derive the escalation level from the ESI score and the deterministic
+    findings, and generate a physician summary when it is IMMEDIATE.
+    """
+    patient: Patient = state["patient"]
+    triage_result: TriageResult | None = state.get("triage_result")
+    findings: list[ClinicalFinding] = state.get("findings", [])
+
+    escalation = build_escalation(
+        patient=patient,
+        esi_score=triage_result.esi_score if triage_result else None,
+        findings=findings,
+        system_error=state.get("system_error"),
+    )
+
+    patient.status = (
+        TriageStatus.ESCALATED if escalation.triggered else TriageStatus.TRIAGED
+    )
+
+    return {**state, "patient": patient, "escalation": escalation}
+
+
+# ─── Node 4 — Patient Card Builder ───────────────────────────────────────────
 
 def build_card_node(state: TriageState) -> TriageState:
-    """
-    Assemble the final PatientCard from state.
-    This is the structured output rendered by the Streamlit UI.
-    """
-    patient: Patient           = state["patient"]
-    red_flag_alert             = state["red_flag_alert"]
-    triage_result              = state.get("triage_result")
+    """Assemble the final PatientCard rendered by the Streamlit UI."""
+    patient: Patient = state["patient"]
 
     card = PatientCard(
         patient=patient,
-        red_flag_alert=red_flag_alert,
-        triage_result=triage_result,
+        escalation=state["escalation"],
+        triage_result=state.get("triage_result"),
     )
 
-    logger.info("build_card_node — card built for %s | %s", patient.patient_id, card.display_esi)
-
+    logger.info(
+        "build_card_node — %s | %s | escalation=%s",
+        patient.patient_id, card.display_esi, card.escalation.level.value,
+    )
     return {**state, "patient_card": card}
-
-
-# ─── Conditional Routing ──────────────────────────────────────────────────────
-
-def _route_after_red_flag(state: TriageState) -> str:
-    """Route to triage_node if clear, skip straight to build_card_node if flagged."""
-    if state["red_flag_alert"].triggered:
-        return "build_card_node"
-    return "triage_node"
 
 
 # ─── Graph Assembly ───────────────────────────────────────────────────────────
 
-def build_triage_graph() -> StateGraph:
-    """
-    Assemble and compile the LangGraph triage pipeline.
-    Returns a compiled graph ready to invoke with a TriageState dict.
-    """
+def build_triage_graph():
+    """Assemble and compile the LangGraph triage pipeline."""
     graph = StateGraph(TriageState)
 
-    graph.add_node("red_flag_node", red_flag_node)
+    graph.add_node("assess_node", assess_node)
     graph.add_node("triage_node", triage_node)
+    graph.add_node("escalate_node", escalate_node)
     graph.add_node("build_card_node", build_card_node)
 
-    graph.add_edge(START, "red_flag_node")
-    graph.add_conditional_edges(
-        "red_flag_node",
-        _route_after_red_flag,
-        {
-            "triage_node": "triage_node",
-            "build_card_node": "build_card_node",
-        },
-    )
-    graph.add_edge("triage_node", "build_card_node")
+    graph.add_edge(START, "assess_node")
+    graph.add_edge("assess_node", "triage_node")
+    graph.add_edge("triage_node", "escalate_node")
+    graph.add_edge("escalate_node", "build_card_node")
     graph.add_edge("build_card_node", END)
 
     return graph.compile()
@@ -227,13 +242,12 @@ def run_triage(patient: Patient) -> PatientCard:
 
     initial_state: TriageState = {
         "patient": patient,
-        "red_flag_alert": None,
+        "findings": [],
         "triage_result": None,
+        "escalation": None,
         "patient_card": None,
         "retrieval_context": "",
-        "esi_estimate": 0,
-        "error": None,
+        "system_error": None,
     }
 
-    final_state = graph.invoke(initial_state)
-    return final_state["patient_card"]
+    return graph.invoke(initial_state)["patient_card"]
