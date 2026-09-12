@@ -14,7 +14,13 @@ load_dotenv()
 
 BASE_DIR = Path(__file__).parent
 DATA_DIR = BASE_DIR / "data"
-CHROMA_DIR = BASE_DIR / "chroma_db"
+
+# The clinical reference and its precomputed embedding index are both committed
+# to the repo, so the app never builds an index at runtime. Rebuild with
+# `python -m scripts.build_index` after editing the reference.
+REFERENCE_DOC = DATA_DIR / "esi_reference.md"
+REFERENCE_INDEX = DATA_DIR / "reference_index.json"
+SEED_COHORT = DATA_DIR / "seed_cohort.json"
 
 # ─── Anthropic ────────────────────────────────────────────────────────────────
 
@@ -37,18 +43,36 @@ TRIAGE_MODEL: str = "claude-opus-5"
 SUMMARY_MODEL: str = "claude-sonnet-5"
 
 # ─── Embeddings ───────────────────────────────────────────────────────────────
+#
+# Anthropic ships no embedding model; Voyage is its documented partner. Query
+# embedding is one small HTTP call, so there is no local model and no torch.
+#
+# Retrieval degrades in two steps rather than failing:
+#   key present  → semantic search over the precomputed index
+#   key absent   → lexical overlap scoring over the same index
+#   index absent → no context; triage proceeds ungrounded
+#
+# That means the app needs exactly one secret (ANTHROPIC_API_KEY) to be fully
+# functional, and the embeddings key is an upgrade rather than a requirement.
 
-EMBEDDING_MODEL: str = "sentence-transformers/all-MiniLM-L6-v2"
+VOYAGE_API_KEY: str = os.getenv("VOYAGE_API_KEY", "")
+EMBEDDING_MODEL: str = "voyage-3.5-lite"
+EMBEDDING_ENDPOINT: str = "https://api.voyageai.com/v1/embeddings"
+EMBEDDING_TIMEOUT_SECONDS: float = 10.0
 
-# ─── ChromaDB ─────────────────────────────────────────────────────────────────
+# ─── Retrieval Settings ───────────────────────────────────────────────────────
 
-CHROMA_COLLECTION_NAME: str = "triage_knowledge"
+RETRIEVAL_K: int = 4
+MAX_CHUNK_CHARS: int = 1200  # sections longer than this are split further
 
-# ─── RAG Settings ─────────────────────────────────────────────────────────────
+# ─── Demo Mode ────────────────────────────────────────────────────────────────
+#
+# Set DEMO_MODE=true for a public deployment. Patients are then scoped to the
+# visitor's browser session rather than a shared file, so visitors cannot see
+# or wipe each other's queues, and live triage runs are capped.
 
-CHUNK_SIZE: int = 1000
-CHUNK_OVERLAP: int = 200
-RETRIEVAL_K: int = 5
+DEMO_MODE: bool = os.getenv("DEMO_MODE", "false").strip().lower() in {"1", "true", "yes"}
+LIVE_TRIAGE_LIMIT: int = int(os.getenv("LIVE_TRIAGE_LIMIT", "3"))
 
 # ─── Escalation Thresholds ────────────────────────────────────────────────────
 

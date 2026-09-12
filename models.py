@@ -62,6 +62,30 @@ class TriageStatus(str, Enum):
     RESOLVED  = "resolved"   # clinician has dispositioned the patient
 
 
+# ─── Clinical Reference ───────────────────────────────────────────────────────
+
+class ReferenceChunk(BaseModel):
+    """
+    One retrievable section of the clinical reference.
+
+    Chunks are split on markdown headings rather than a fixed character window,
+    so each one is a self-contained criteria section and carries the heading it
+    came from — which is what makes a citation in the prompt meaningful.
+    """
+
+    text: str
+    source: str = Field(..., description="Source document filename")
+    section: str = Field(..., description="Heading path this chunk came from")
+    embedding: list[float] = Field(
+        default_factory=list,
+        description="Precomputed at build time; empty in a lexical-only index",
+    )
+
+    @property
+    def citation(self) -> str:
+        return f"{self.source} § {self.section}"
+
+
 # ─── Vitals ───────────────────────────────────────────────────────────────────
 
 class VitalSigns(BaseModel):

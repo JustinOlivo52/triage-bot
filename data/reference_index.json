@@ -1,0 +1,110 @@
+{
+  "source": "esi_reference.md",
+  "chunk_count": 17,
+  "dimensions": 0,
+  "mode": "lexical",
+  "chunks": [
+    {
+      "text": "Emergency Severity Index \u2014 Condensed Triage Reference\n\n> **Status: DRAFT \u2014 pending clinical review.**\n> This document was drafted as a condensed, self-authored summary of publicly\n> described ESI v4 concepts. It is **not** a reproduction of the ESI\n> Implementation Handbook or any other copyrighted material, and it is not a\n> substitute for it. It exists to give the retrieval layer something accurate\n> and redistributable to ground against.\n>\n> **Sources this summarises:** the Emergency Severity Index (ESI) v4 algorithm\n> as published by the Agency for Healthcare Research and Quality (AHRQ) and\n> maintained by the Emergency Nurses Association (ENA). Consult the current\n> official handbook for authoritative criteria.\n>\n> All thresholds in this document must match `config.py`. If they diverge, the\n> code is the source of truth and this document is wrong.\n\n---",
+      "source": "esi_reference.md",
+      "section": "Emergency Severity Index \u2014 Condensed Triage Reference",
+      "embedding": []
+    },
+    {
+      "text": "Emergency Severity Index \u2014 Condensed Triage Reference > Purpose of Triage\n\nTriage assigns each arriving patient an acuity level so that limited clinical\nresources reach the sickest patients first. It is a sorting decision, not a\ndiagnosis. The question is not \"what is wrong with this patient\" but \"how long\ncan this patient safely wait, and what will they need\".\n\nTwo failure modes are not symmetrical. **Under-triage** \u2014 assigning a lower\nacuity than the patient's condition warrants \u2014 delays care for someone who is\ndeteriorating and is the failure that causes harm. **Over-triage** consumes\nresources and lengthens waits for others. Where the evidence is genuinely\nambiguous, the safer error is to over-triage.\n\n---",
+      "source": "esi_reference.md",
+      "section": "Emergency Severity Index \u2014 Condensed Triage Reference > Purpose of Triage",
+      "embedding": []
+    },
+    {
+      "text": "Emergency Severity Index \u2014 Condensed Triage Reference > The ESI Algorithm\n\nESI sorts patients into five levels using a sequence of four decision points.\nThe sequence matters: each question is only asked if the previous one was\nanswered \"no\".",
+      "source": "esi_reference.md",
+      "section": "Emergency Severity Index \u2014 Condensed Triage Reference > The ESI Algorithm",
+      "embedding": []
+    },
+    {
+      "text": "Emergency Severity Index \u2014 Condensed Triage Reference > The ESI Algorithm > Decision Point A \u2014 Is this patient dying?\n\nDoes the patient require an immediate life-saving intervention? If yes, the\npatient is **ESI 1** and the algorithm stops.\n\nLife-saving interventions include airway management, assisted ventilation,\nemergency medications for an unstable rhythm or pressure, and immediate\nhaemodynamic resuscitation. Ordinary diagnostic work-up is not a life-saving\nintervention.",
+      "source": "esi_reference.md",
+      "section": "Emergency Severity Index \u2014 Condensed Triage Reference > The ESI Algorithm > Decision Point A \u2014 Is this patient dying?",
+      "embedding": []
+    },
+    {
+      "text": "Emergency Severity Index \u2014 Condensed Triage Reference > The ESI Algorithm > Decision Point B \u2014 Should this patient wait?\n\nIs this a high-risk situation, or is the patient confused, lethargic or\ndisoriented, or in severe pain or distress? If yes, the patient is **ESI 2**.\n\nA high-risk situation is one where a plausible worst-case outcome is serious\nand time-dependent, even if the patient currently looks well. The judgment is\nabout trajectory and risk, not present appearance.",
+      "source": "esi_reference.md",
+      "section": "Emergency Severity Index \u2014 Condensed Triage Reference > The ESI Algorithm > Decision Point B \u2014 Should this patient wait?",
+      "embedding": []
+    },
+    {
+      "text": "Emergency Severity Index \u2014 Condensed Triage Reference > The ESI Algorithm > Decision Point C \u2014 How many resources will this patient need?\n\nFor patients who are not ESI 1 or 2, acuity is predicted by the number of\ndistinct resources the work-up will consume.\n\n- Two or more resources \u2192 **ESI 3**\n- Exactly one resource \u2192 **ESI 4**\n- No resources \u2192 **ESI 5**",
+      "source": "esi_reference.md",
+      "section": "Emergency Severity Index \u2014 Condensed Triage Reference > The ESI Algorithm > Decision Point C \u2014 How many resources will this patient need?",
+      "embedding": []
+    },
+    {
+      "text": "Emergency Severity Index \u2014 Condensed Triage Reference > The ESI Algorithm > Decision Point D \u2014 Do the vital signs change the answer?\n\nFor a patient otherwise scored ESI 3, out-of-range vital signs should prompt\nconsideration of upgrading to ESI 2. Danger-zone vitals are a reason to\nre-examine the assignment, not an automatic reassignment.\n\n---",
+      "source": "esi_reference.md",
+      "section": "Emergency Severity Index \u2014 Condensed Triage Reference > The ESI Algorithm > Decision Point D \u2014 Do the vital signs change the answer?",
+      "embedding": []
+    },
+    {
+      "text": "Emergency Severity Index \u2014 Condensed Triage Reference > ESI Levels > ESI 1 \u2014 Resuscitation\n\nRequires immediate life-saving intervention. Physician at the bedside\nimmediately. No waiting room time under any circumstances.\n\nTypical presentations: cardiac or respiratory arrest, unresponsiveness,\nsevere respiratory distress with inadequate oxygenation, profound\nhaemodynamic instability, unstable airway.",
+      "source": "esi_reference.md",
+      "section": "Emergency Severity Index \u2014 Condensed Triage Reference > ESI Levels > ESI 1 \u2014 Resuscitation",
+      "embedding": []
+    },
+    {
+      "text": "Emergency Severity Index \u2014 Condensed Triage Reference > ESI Levels > ESI 2 \u2014 Emergent\n\nHigh risk, or altered mental status, or severe pain or distress. Should not\nwait. Placed in a treatment area as soon as one is available, ahead of all\nlower-acuity patients.\n\nTypical presentations: chest pain with features suggesting an acute coronary\nsyndrome, stroke symptoms within the treatment window, suspected sepsis,\nsignificant mechanism of injury, new confusion or lethargy, immunocompromised\npatient with fever, suspected ectopic pregnancy, active suicidal ideation.",
+      "source": "esi_reference.md",
+      "section": "Emergency Severity Index \u2014 Condensed Triage Reference > ESI Levels > ESI 2 \u2014 Emergent",
+      "embedding": []
+    },
+    {
+      "text": "Emergency Severity Index \u2014 Condensed Triage Reference > ESI Levels > ESI 3 \u2014 Urgent\n\nStable, but the work-up is expected to require two or more resources. This is\nthe most common level in most departments and also the level where acuity is\nmost often underestimated, particularly when vital signs are abnormal.\n\nTypical presentations: abdominal pain requiring laboratory work and imaging,\nmoderate injury requiring imaging and procedural care, vomiting requiring\nintravenous fluids and laboratory work.",
+      "source": "esi_reference.md",
+      "section": "Emergency Severity Index \u2014 Condensed Triage Reference > ESI Levels > ESI 3 \u2014 Urgent",
+      "embedding": []
+    },
+    {
+      "text": "Emergency Severity Index \u2014 Condensed Triage Reference > ESI Levels > ESI 4 \u2014 Less Urgent\n\nStable, expected to require exactly one resource.\n\nTypical presentations: simple laceration requiring repair, isolated limb\ninjury requiring a single radiograph, uncomplicated urinary symptoms requiring\na single test.",
+      "source": "esi_reference.md",
+      "section": "Emergency Severity Index \u2014 Condensed Triage Reference > ESI Levels > ESI 4 \u2014 Less Urgent",
+      "embedding": []
+    },
+    {
+      "text": "Emergency Severity Index \u2014 Condensed Triage Reference > ESI Levels > ESI 5 \u2014 Non-Urgent\n\nStable, expected to require no resources beyond examination.\n\nTypical presentations: prescription refill, suture or dressing removal, minor\nsuperficial complaint, a recheck with no new findings.\n\n---",
+      "source": "esi_reference.md",
+      "section": "Emergency Severity Index \u2014 Condensed Triage Reference > ESI Levels > ESI 5 \u2014 Non-Urgent",
+      "embedding": []
+    },
+    {
+      "text": "Emergency Severity Index \u2014 Condensed Triage Reference > What Counts as a Resource\n\nA resource is a distinct diagnostic or therapeutic activity that consumes\ndepartmental capacity beyond examination and simple advice.\n\n**Counts as a resource:** laboratory studies, electrocardiogram, diagnostic\nimaging, intravenous fluids, intravenous, intramuscular or nebulised\nmedication, specialty consultation, a simple or complex procedure.\n\n**Does not count:** history and physical examination, point-of-care testing\nperformed at the bedside, oral medication, a prescription, a tetanus\nimmunisation, a dressing change, crutches or a sling.\n\nCounting is by **type**, not by quantity. Three separate blood tests are one\nresource. A blood test plus an imaging study is two.\n\n---",
+      "source": "esi_reference.md",
+      "section": "Emergency Severity Index \u2014 Condensed Triage Reference > What Counts as a Resource",
+      "embedding": []
+    },
+    {
+      "text": "Emergency Severity Index \u2014 Condensed Triage Reference > Vital Sign Danger Zones\n\nThese thresholds are adult values and are duplicated in `config.py`, which is\nthe operative source. They are applied in two tiers.\n\n**Concerning** \u2014 outside normal range; a reason to look more closely, not by\nitself a statement that the patient cannot wait:\nheart rate above 100 or below 60; respiratory rate above 20 or below 12;\noxygen saturation below 94%; temperature above 38.5 \u00b0C or below 36.0 \u00b0C;\nsystolic pressure above 180 or below 100; diastolic pressure above 110.\n\n**Critical** \u2014 derangement warranting immediate physician attention regardless\nof the assigned acuity level:\nheart rate above 130 or below 45; respiratory rate above 30 or below 8;\noxygen saturation below 90%; temperature above 40.0 \u00b0C or below 35.0 \u00b0C;\nsystolic pressure above 220 or below 90; diastolic pressure above 120.\n\n**These ranges do not apply to children.** Normal paediatric heart and\nrespiratory rates are substantially higher and vary by age; a well three-year-old\nsits near a heart rate of 110 and a respiratory rate of 26, both of which read\nas abnormal against adult values. Age-banded thresholds are a known gap in the\ncurrent implementation.\n\n---",
+      "source": "esi_reference.md",
+      "section": "Emergency Severity Index \u2014 Condensed Triage Reference > Vital Sign Danger Zones",
+      "embedding": []
+    },
+    {
+      "text": "Emergency Severity Index \u2014 Condensed Triage Reference > High-Risk Presentations\n\nThese warrant consideration of ESI 2 even when the patient appears well and\nthe vital signs are unremarkable.\n\n**Cardiac:** chest pain or pressure with exertional features, radiation,\ndiaphoresis, or associated dyspnoea. Anginal equivalents in diabetic, elderly\nand female patients often present without classic chest pain.\n\n**Neurological:** any focal deficit of sudden onset \u2014 facial droop, unilateral\nweakness, speech disturbance \u2014 is time-critical. New confusion in an older\npatient is a presenting sign of serious illness, not a baseline finding to be\nassumed.\n\n**Infectious:** fever with tachycardia and tachypnoea suggests sepsis.\nImmunocompromised patients and those at the extremes of age may mount no\nfever at all.\n\n**Respiratory:** inability to speak in full sentences, accessory muscle use,\nor oxygen saturation below the concerning threshold.\n\n**Obstetric:** abdominal pain or bleeding in a patient of childbearing age\nrequires exclusion of ectopic pregnancy.\n\n**Psychiatric:** active suicidal or homicidal ideation requires immediate\nsafety assessment regardless of physical presentation.\n\n---",
+      "source": "esi_reference.md",
+      "section": "Emergency Severity Index \u2014 Condensed Triage Reference > High-Risk Presentations",
+      "embedding": []
+    },
+    {
+      "text": "Emergency Severity Index \u2014 Condensed Triage Reference > Age as a Risk Modifier\n\nAge alone does not determine acuity. Age combined with any other abnormal\nfinding raises it, because both extremes of the age range blunt the usual\nwarning signs.\n\n**Paediatric patients (roughly 5 and under)** cannot reliably report symptoms,\ncompensate well until they decompensate abruptly, and have age-specific normal\nranges that adult thresholds misread.\n\n**Geriatric patients (roughly 65 and over)** frequently present atypically.\nMyocardial infarction without chest pain, infection without fever, and acute\nabdomen with minimal tenderness are all common. Baseline medication can blunt\nthe tachycardic response that would otherwise signal instability.\n\n---",
+      "source": "esi_reference.md",
+      "section": "Emergency Severity Index \u2014 Condensed Triage Reference > Age as a Risk Modifier",
+      "embedding": []
+    },
+    {
+      "text": "Emergency Severity Index \u2014 Condensed Triage Reference > Documenting the Decision\n\nA triage assignment should record what was observed, which criterion applied,\nand what is expected to be needed. An assignment that cannot be explained\ncannot be reviewed, and an assignment that cannot be reviewed cannot be\nimproved.\n\nNegative findings matter as much as positive ones. \"Denies chest pain\" is a\nclinically meaningful statement and is not the same as chest pain. A history\nof a condition is not the same as that condition being present now.",
+      "source": "esi_reference.md",
+      "section": "Emergency Severity Index \u2014 Condensed Triage Reference > Documenting the Decision",
+      "embedding": []
+    }
+  ]
+}

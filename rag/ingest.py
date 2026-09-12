@@ -1,175 +1,189 @@
 """
-rag/ingest.py — Document loading, chunking, embedding, and ChromaDB ingestion.
-Run directly to force a full re-ingest: python -m rag.ingest
+rag/ingest.py — Build-time indexing of the clinical reference.
+
+Runs offline, not at app startup. The resulting index is committed to the repo,
+so the deployed app only ever loads JSON — no model download, no vector
+database, no write to an ephemeral filesystem.
+
+Rebuild after editing the reference:
+
+    python -m scripts.build_index
+
+Chunking splits on markdown headings rather than a fixed character window. For
+a criteria document that is the semantically correct boundary: each chunk is
+one self-contained rule, and it carries the heading it came from so the prompt
+can cite it.
 """
 
+import json
 import logging
-from functools import lru_cache
+import re
 from pathlib import Path
 
-import fitz  # PyMuPDF
-from langchain_core.documents import Document
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_community.embeddings import HuggingFaceEmbeddings
-from langchain_community.vectorstores import Chroma
-
-from config import (
-    CHUNK_OVERLAP,
-    CHUNK_SIZE,
-    CHROMA_COLLECTION_NAME,
-    CHROMA_DIR,
-    DATA_DIR,
-    EMBEDDING_MODEL,
-)
+from config import MAX_CHUNK_CHARS, REFERENCE_DOC, REFERENCE_INDEX
+from models import ReferenceChunk
+from rag.embeddings import embed_texts
 
 logger = logging.getLogger(__name__)
 
-
-# ─── Document Loading ─────────────────────────────────────────────────────────
-
-def load_documents(data_dir: Path = DATA_DIR) -> list[Document]:
-    """
-    Scan data_dir for PDFs and load every page as a LangChain Document.
-    Metadata preserves source filename and page number for traceability.
-    """
-    documents: list[Document] = []
-    pdf_files = list(data_dir.glob("*.pdf"))
-
-    if not pdf_files:
-        logger.warning("No PDFs found in %s — place clinical guidelines in /data", data_dir)
-        return documents
-
-    for pdf_path in pdf_files:
-        try:
-            doc = fitz.open(str(pdf_path))
-            page_count = 0
-            for page_num, page in enumerate(doc):
-                text = page.get_text()
-                if text.strip():
-                    documents.append(
-                        Document(
-                            page_content=text,
-                            metadata={
-                                "source": pdf_path.name,
-                                "page": page_num + 1,
-                            },
-                        )
-                    )
-                    page_count += 1
-            doc.close()
-            logger.info("Loaded: %s (%d pages)", pdf_path.name, page_count)
-        except Exception as e:
-            logger.error("Failed to load %s: %s", pdf_path.name, e)
-
-    logger.info("Total pages loaded: %d", len(documents))
-    return documents
+_HEADING = re.compile(r"^(#{1,6})\s+(.*?)\s*$", re.MULTILINE)
 
 
 # ─── Chunking ─────────────────────────────────────────────────────────────────
 
-def split_documents(documents: list[Document]) -> list[Document]:
+def _split_oversized(text: str, limit: int) -> list[str]:
     """
-    Split raw pages into overlapping chunks for embedding.
-    Separator order preserves paragraph → sentence → word boundaries.
+    Split a section that is too long, preferring paragraph boundaries.
+
+    Only used for sections that exceed the limit; well-sized sections pass
+    through whole.
     """
-    splitter = RecursiveCharacterTextSplitter(
-        chunk_size=CHUNK_SIZE,
-        chunk_overlap=CHUNK_OVERLAP,
-        separators=["\n\n", "\n", ". ", " ", ""],
-    )
-    chunks = splitter.split_documents(documents)
-    logger.info("Split into %d chunks (size=%d, overlap=%d)", len(chunks), CHUNK_SIZE, CHUNK_OVERLAP)
+    if len(text) <= limit:
+        return [text]
+
+    parts: list[str] = []
+    current = ""
+    for paragraph in text.split("\n\n"):
+        candidate = f"{current}\n\n{paragraph}".strip() if current else paragraph
+        if len(candidate) > limit and current:
+            parts.append(current)
+            current = paragraph
+        else:
+            current = candidate
+    if current:
+        parts.append(current)
+    return parts
+
+
+def chunk_markdown(markdown: str, source: str, limit: int = MAX_CHUNK_CHARS) -> list[ReferenceChunk]:
+    """
+    Split a markdown document into one chunk per heading section.
+
+    The heading path is retained (e.g. "ESI Levels > ESI 2 — Emergent") so a
+    retrieved chunk can be cited precisely rather than by page number.
+    """
+    headings = list(_HEADING.finditer(markdown))
+    if not headings:
+        return [
+            ReferenceChunk(text=body, source=source, section="(document)")
+            for body in _split_oversized(markdown.strip(), limit)
+            if body.strip()
+        ]
+
+    chunks: list[ReferenceChunk] = []
+    path: dict[int, str] = {}
+
+    for i, match in enumerate(headings):
+        level = len(match.group(1))
+        title = match.group(2).strip()
+
+        # Maintain the heading path: a new heading replaces its own level and
+        # clears anything deeper.
+        path[level] = title
+        for deeper in [lv for lv in path if lv > level]:
+            del path[deeper]
+        section = " > ".join(path[lv] for lv in sorted(path))
+
+        start = match.end()
+        end = headings[i + 1].start() if i + 1 < len(headings) else len(markdown)
+        body = markdown[start:end].strip()
+
+        if not body:
+            continue  # heading with no content of its own
+
+        for part in _split_oversized(body, limit):
+            chunks.append(ReferenceChunk(
+                text=f"{section}\n\n{part}",
+                source=source,
+                section=section,
+            ))
+
     return chunks
 
 
-# ─── Embeddings ───────────────────────────────────────────────────────────────
+# ─── Index Building ───────────────────────────────────────────────────────────
 
-@lru_cache(maxsize=1)
-def get_embeddings() -> HuggingFaceEmbeddings:
+def build_index(
+    doc_path: Path = REFERENCE_DOC,
+    out_path: Path = REFERENCE_INDEX,
+    *,
+    api_key: str | None = None,
+    embed: bool = True,
+) -> list[ReferenceChunk]:
     """
-    Initialize local HuggingFace embeddings — no API call, no cost.
+    Chunk the reference and write the index to disk.
 
-    Cached: constructing this loads a sentence-transformer model into memory.
-    Doing that per query made retrieval latency dominate every triage run.
+    With `embed=True` (the default) an embeddings key is required and the index
+    supports semantic search. With `embed=False` the index is written without
+    vectors and retrieval runs in lexical mode — worse, but it means the
+    project has *no* hard dependency on an embeddings provider.
+
+    Never silently downgrades: asking for embeddings and not getting them
+    raises, because an index that looks built but searches lexically would
+    quietly degrade production with no visible failure.
     """
-    return HuggingFaceEmbeddings(
-        model_name=EMBEDDING_MODEL,
-        model_kwargs={"device": "cpu"},
-        encode_kwargs={"normalize_embeddings": True},
-    )
-
-
-# ─── Vector Store ─────────────────────────────────────────────────────────────
-
-def build_vector_store(chunks: list[Document]) -> Chroma:
-    """Embed chunks and write to persistent ChromaDB on disk."""
-    embeddings = get_embeddings()
-
-    vector_store = Chroma.from_documents(
-        documents=chunks,
-        embedding=embeddings,
-        collection_name=CHROMA_COLLECTION_NAME,
-        persist_directory=str(CHROMA_DIR),
-    )
-
-    logger.info("Vector store built — %d chunks persisted to %s", len(chunks), CHROMA_DIR)
-    return vector_store
-
-
-def load_vector_store() -> Chroma:
-    """Load an existing ChromaDB collection from disk."""
-    embeddings = get_embeddings()
-
-    return Chroma(
-        collection_name=CHROMA_COLLECTION_NAME,
-        embedding_function=embeddings,
-        persist_directory=str(CHROMA_DIR),
-    )
-
-
-def vector_store_exists() -> bool:
-    """Return True if a persisted ChromaDB store is already on disk."""
-    return (CHROMA_DIR / "chroma.sqlite3").exists()
-
-
-# ─── Ingestion Orchestrator ───────────────────────────────────────────────────
-
-def ingest(force: bool = False) -> Chroma | None:
-    """
-    Full ingestion pipeline: load → chunk → embed → store.
-
-    Skips ingestion and loads from disk if the vector store already exists.
-    Pass force=True to re-ingest after adding new documents to /data.
-
-    Returns None when there is nothing to ingest. Building an empty store
-    instead would load the embedding model for no reason, which turns a
-    missing-guidelines setup into a hard startup failure — the app is supposed
-    to run ungrounded in that case, not crash.
-    """
-    if vector_store_exists() and not force:
-        logger.info("Vector store found on disk — loading existing store")
-        return load_vector_store()
-
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-
-    documents = load_documents()
-
-    if not documents:
-        logger.warning(
-            "No documents found in %s — skipping ingestion. Triage will run "
-            "without retrieved clinical context.", DATA_DIR,
+    if not doc_path.exists():
+        raise FileNotFoundError(
+            f"Clinical reference not found at {doc_path}. "
+            f"Write it before building the index."
         )
-        return None
 
-    CHROMA_DIR.mkdir(parents=True, exist_ok=True)
-    chunks = split_documents(documents)
-    return build_vector_store(chunks)
+    markdown = doc_path.read_text(encoding="utf-8")
+    chunks = chunk_markdown(markdown, source=doc_path.name)
+    if not chunks:
+        raise ValueError(f"{doc_path} produced no chunks — is it empty?")
+
+    logger.info("Chunked %s into %d sections", doc_path.name, len(chunks))
+
+    if embed:
+        vectors = embed_texts([c.text for c in chunks], input_type="document", api_key=api_key)
+        if vectors is None:
+            raise RuntimeError(
+                "Embedding failed. Set VOYAGE_API_KEY to build a semantic index, "
+                "or pass embed=False to build a lexical-only index. Refusing to "
+                "write an index that claims to be semantic but is not."
+            )
+        for chunk, vector in zip(chunks, vectors):
+            chunk.embedding = vector
+    else:
+        logger.warning(
+            "Building a lexical-only index — retrieval will use keyword overlap, "
+            "not semantic similarity"
+        )
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    dimensions = len(chunks[0].embedding)
+    payload = {
+        "source": doc_path.name,
+        "chunk_count": len(chunks),
+        "dimensions": dimensions,
+        "mode": "semantic" if dimensions else "lexical",
+        "chunks": [c.model_dump() for c in chunks],
+    }
+    out_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+    logger.info(
+        "Wrote %d chunks (%s) to %s",
+        len(chunks),
+        f"{dimensions} dimensions" if dimensions else "no embeddings",
+        out_path,
+    )
+    return chunks
 
 
-# ─── CLI Entry Point ──────────────────────────────────────────────────────────
+def load_index(path: Path = REFERENCE_INDEX) -> list[ReferenceChunk]:
+    """Load the committed index. Returns an empty list if it is not present."""
+    if not path.exists():
+        logger.warning("No reference index at %s — triage will run ungrounded", path)
+        return []
 
-if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s — %(message)s")
-    logger.info("Starting forced ingest...")
-    ingest(force=True)
-    logger.info("Ingest complete.")
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        return [ReferenceChunk.model_validate(c) for c in payload["chunks"]]
+    except Exception as e:
+        logger.error("Could not read reference index %s: %s", path, e)
+        return []
+
+
+def index_exists(path: Path = REFERENCE_INDEX) -> bool:
+    return path.exists()

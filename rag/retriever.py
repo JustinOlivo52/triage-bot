@@ -1,109 +1,182 @@
 """
-rag/retriever.py — Similarity search and context formatting against ChromaDB.
-Used by the triage agent to ground LLM reasoning in clinical guidelines.
+rag/retriever.py — Runtime retrieval over the committed reference index.
+
+Search is cosine similarity over a few dozen precomputed vectors, which is a
+numpy dot product, not a database. At this corpus size a vector store would be
+pure overhead.
+
+Retrieval degrades in two steps rather than failing:
+
+    embeddings key present  → semantic search
+    embeddings key absent   → lexical overlap over the same chunks
+    index absent            → no context; triage proceeds ungrounded
+
+So the app is fully functional with one secret (ANTHROPIC_API_KEY); the
+embeddings key improves retrieval rather than enabling the app.
 """
 
 import logging
+import re
+from functools import lru_cache
 
-from langchain_core.documents import Document
-from langchain_community.vectorstores import Chroma
+import numpy as np
 
 from config import RETRIEVAL_K
-from rag.ingest import load_vector_store, vector_store_exists
+from models import ReferenceChunk
+from rag.embeddings import embed_query, embeddings_available
+from rag.ingest import index_exists, load_index
 
 logger = logging.getLogger(__name__)
 
 NO_CONTEXT_MESSAGE = "No clinical reference context available."
 
-# Cached store handle. Loading it constructs the embedding model, which is
-# expensive enough that doing it per query dominates triage latency. A failed
-# lookup is deliberately not cached, so a store built later is picked up.
-_store: Chroma | None = None
+_TOKEN = re.compile(r"[a-z0-9]+")
+
+# Words too common in a clinical corpus to carry signal.
+_STOPWORDS = frozenset("""
+a an the and or of to in for with without on at by is are was were be been
+patient patients presenting presents history the this that these those
+""".split())
 
 
-# ─── Store Access ─────────────────────────────────────────────────────────────
+# ─── Index Access ─────────────────────────────────────────────────────────────
 
-def get_vector_store() -> Chroma | None:
+@lru_cache(maxsize=1)
+def _index() -> tuple[tuple[ReferenceChunk, ...], np.ndarray | None]:
     """
-    Return the ChromaDB vector store if it exists, otherwise None.
-    Callers are responsible for handling the None case gracefully.
+    Load the reference index once and precompute its normalised matrix.
+
+    Cached because the index is immutable at runtime — it is a committed file,
+    never rebuilt by the running app.
     """
-    global _store
+    chunks = load_index()
+    if not chunks:
+        return (), None
 
-    if _store is not None:
-        return _store
+    vectors = [c.embedding for c in chunks if c.embedding]
+    if len(vectors) != len(chunks):
+        logger.warning("Index has chunks without embeddings — lexical search only")
+        return tuple(chunks), None
 
-    if not vector_store_exists():
-        logger.warning("No vector store found — retrieval context will be unavailable")
+    matrix = np.asarray(vectors, dtype=np.float32)
+    norms = np.linalg.norm(matrix, axis=1, keepdims=True)
+    # Guard against a zero vector making the whole row NaN.
+    matrix = matrix / np.where(norms == 0, 1.0, norms)
+
+    logger.info("Loaded reference index: %d chunks, %d dimensions", *matrix.shape)
+    return tuple(chunks), matrix
+
+
+def reset_index_cache() -> None:
+    """Drop the cached index. Call after rebuilding it."""
+    _index.cache_clear()
+
+
+def retrieval_mode() -> str:
+    """Which retrieval path is active: 'semantic', 'lexical', or 'none'."""
+    chunks, matrix = _index()
+    if not chunks:
+        return "none"
+    if matrix is not None and embeddings_available():
+        return "semantic"
+    return "lexical"
+
+
+# ─── Search ───────────────────────────────────────────────────────────────────
+
+def _tokens(text: str) -> set[str]:
+    return {t for t in _TOKEN.findall(text.lower()) if t not in _STOPWORDS and len(t) > 2}
+
+
+def _lexical_search(query: str, chunks: tuple[ReferenceChunk, ...], k: int) -> list[ReferenceChunk]:
+    """
+    Token-overlap ranking, used when no embeddings key is configured.
+
+    Deliberately simple. It is a fallback that keeps the app useful without a
+    second API key, not a competitor to semantic search.
+    """
+    query_tokens = _tokens(query)
+    if not query_tokens:
+        return []
+
+    scored: list[tuple[float, int, ReferenceChunk]] = []
+    for i, chunk in enumerate(chunks):
+        chunk_tokens = _tokens(chunk.text)
+        if not chunk_tokens:
+            continue
+        overlap = len(query_tokens & chunk_tokens)
+        if overlap:
+            # Normalise by chunk size so long sections do not dominate.
+            scored.append((overlap / (len(chunk_tokens) ** 0.5), i, chunk))
+
+    scored.sort(key=lambda row: (-row[0], row[1]))
+    return [chunk for _, _, chunk in scored[:k]]
+
+
+def _semantic_search(
+    query: str,
+    chunks: tuple[ReferenceChunk, ...],
+    matrix: np.ndarray,
+    k: int,
+) -> list[ReferenceChunk] | None:
+    """Cosine similarity over the precomputed matrix. None if embedding fails."""
+    vector = embed_query(query)
+    if vector is None:
         return None
 
-    _store = load_vector_store()
-    return _store
+    q = np.asarray(vector, dtype=np.float32)
+    norm = np.linalg.norm(q)
+    if norm == 0:
+        return None
+    q = q / norm
+
+    if q.shape[0] != matrix.shape[1]:
+        logger.error(
+            "Query dimension %d does not match index dimension %d — "
+            "the index was built with a different embedding model",
+            q.shape[0], matrix.shape[1],
+        )
+        return None
+
+    scores = matrix @ q
+    top = np.argsort(-scores)[:k]
+    return [chunks[i] for i in top]
 
 
-def reset_vector_store_cache() -> None:
-    """Drop the cached store handle. Call after a re-ingest."""
-    global _store
-    _store = None
-
-
-# ─── Retrieval ────────────────────────────────────────────────────────────────
-
-def retrieve(query: str, k: int = RETRIEVAL_K) -> list[Document]:
+def retrieve(query: str, k: int = RETRIEVAL_K) -> list[ReferenceChunk]:
     """
-    Run similarity search against ChromaDB and return the top-k Documents.
-    Returns an empty list if no vector store exists or the search fails.
+    Return the top-k reference chunks for a query.
+
+    Falls back from semantic to lexical automatically, so a missing or failing
+    embeddings key costs retrieval quality rather than retrieval itself.
     """
-    store = get_vector_store()
-    if store is None:
+    chunks, matrix = _index()
+    if not chunks:
         return []
 
-    try:
-        results = store.similarity_search(query, k=k)
-        logger.info("Retrieved %d chunks for query: '%s'", len(results), query[:80])
-        return results
-    except Exception as e:
-        logger.error("Retrieval failed: %s", e)
-        return []
+    if matrix is not None and embeddings_available():
+        results = _semantic_search(query, chunks, matrix, k)
+        if results is not None:
+            logger.info("Semantic retrieval returned %d chunks", len(results))
+            return results
+        logger.warning("Semantic search unavailable — falling back to lexical")
 
-
-def retrieve_with_scores(query: str, k: int = RETRIEVAL_K) -> list[tuple[Document, float]]:
-    """
-    Similarity search with relevance scores.
-    Returns list of (Document, score) tuples — higher score = more relevant.
-    """
-    store = get_vector_store()
-    if store is None:
-        return []
-
-    try:
-        results = store.similarity_search_with_relevance_scores(query, k=k)
-        logger.info("Retrieved %d scored chunks for query: '%s'", len(results), query[:80])
-        return results
-    except Exception as e:
-        logger.error("Scored retrieval failed: %s", e)
-        return []
+    results = _lexical_search(query, chunks, k)
+    logger.info("Lexical retrieval returned %d chunks", len(results))
+    return results
 
 
 # ─── Context Formatting ───────────────────────────────────────────────────────
 
-def format_context(documents: list[Document]) -> str:
-    """
-    Format retrieved Documents into a context block ready for prompt injection.
-    Each chunk is labeled with its source and page number.
-    """
-    if not documents:
+def format_context(chunks: list[ReferenceChunk]) -> str:
+    """Format retrieved chunks into a citable context block for the prompt."""
+    if not chunks:
         return NO_CONTEXT_MESSAGE
 
-    sections: list[str] = []
-    for i, doc in enumerate(documents, start=1):
-        source = doc.metadata.get("source", "Unknown source")
-        page = doc.metadata.get("page", "?")
-        sections.append(
-            f"[Reference {i} — {source}, p.{page}]\n{doc.page_content.strip()}"
-        )
-
-    return "\n\n---\n\n".join(sections)
+    return "\n\n---\n\n".join(
+        f"[Reference {i} — {chunk.citation}]\n{chunk.text.strip()}"
+        for i, chunk in enumerate(chunks, start=1)
+    )
 
 
 # ─── Primary Interface ────────────────────────────────────────────────────────
@@ -116,17 +189,17 @@ def retrieve_context(query: str, k: int = RETRIEVAL_K) -> tuple[str, bool]:
     is a human-readable placeholder, which is truthy, so callers cannot infer
     grounding from the string alone.
     """
-    documents = retrieve(query, k=k)
-    return format_context(documents), bool(documents)
+    chunks = retrieve(query, k=k)
+    return format_context(chunks), bool(chunks)
 
 
 def retrieve_triage_context(chief_complaint: str) -> tuple[str, bool]:
     """
     Targeted retrieval for the triage reasoning node. Pulls ESI scoring criteria
-    and clinical decision guidelines relevant to the chief complaint.
+    relevant to the chief complaint.
     """
     query = (
         f"ESI triage scoring criteria for {chief_complaint} "
-        f"emergency severity index guidelines"
+        f"emergency severity index acuity assignment"
     )
     return retrieve_context(query)

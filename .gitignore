@@ -6,11 +6,12 @@
 # ─── Patient Data (PHI) ───────────────────────────────────────────────────────
 memory/patient_store.json
 
-# ─── Vector Store (rebuild with python -m rag.ingest) ────────────────────────
-chroma_db/
-
-# ─── Clinical Guidelines (add your own PDFs) ─────────────────────────────────
-data/
+# ─── Clinical Reference ───────────────────────────────────────────────────────
+# data/ is intentionally NOT ignored. The clinical reference, its precomputed
+# embedding index, and the seeded demo cohort are all committed so the app runs
+# with no build step. Third-party guideline PDFs are excluded: verify licensing
+# before adding any document to a public repository.
+data/*.pdf
 
 # ─── Python ───────────────────────────────────────────────────────────────────
 __pycache__/

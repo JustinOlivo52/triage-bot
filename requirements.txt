@@ -6,25 +6,26 @@ python-dotenv>=1.0.0
 pydantic>=2.0.0
 typing-extensions>=4.9.0
 
-# ─── LangChain Ecosystem ──────────────────────────────────────────────────────
-langchain>=0.2.0
+# ─── LangChain / LangGraph ────────────────────────────────────────────────────
+# Only the pieces actually imported. The `langchain` meta-package and
+# `langchain-community` were removed: the former was never imported at all, and
+# the latter existed solely for the ChromaDB and HuggingFace wrappers that the
+# retrieval rewrite replaced.
 langchain-core>=0.2.0
-langchain-community>=0.2.0
 langchain-anthropic>=0.1.23
-langchain-text-splitters>=0.2.0
-
-# ─── LangGraph ────────────────────────────────────────────────────────────────
 langgraph>=0.2.0
 
 # ─── Anthropic ────────────────────────────────────────────────────────────────
 anthropic>=0.30.0
 
-# ─── Vector Store ─────────────────────────────────────────────────────────────
-chromadb>=0.5.0
-
-# ─── Embeddings (local, no API cost) ──────────────────────────────────────────
-sentence-transformers>=3.0.0
-huggingface-hub>=0.23.0
-
-# ─── Document Loading ─────────────────────────────────────────────────────────
-pymupdf>=1.24.0
+# ─── Retrieval ────────────────────────────────────────────────────────────────
+# No vector database and no local embedding model. The reference corpus is a few
+# dozen chunks with embeddings precomputed at build time and committed, so search
+# is a numpy dot product. `requests` and `numpy` both already ship with
+# streamlit, so this adds nothing to the install.
+#
+# Removed here: sentence-transformers, chromadb, huggingface-hub, pymupdf.
+# Those pulled in torch — roughly 1.5 GB of deep-learning framework to search
+# forty paragraphs, which put the app over the memory ceiling of every free host.
+numpy>=1.24.0
+requests>=2.31.0

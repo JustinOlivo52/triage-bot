@@ -6,7 +6,7 @@ import logging
 
 import streamlit as st
 
-from rag.ingest import ingest
+from rag.retriever import retrieval_mode
 from agents.assessment import vital_severity_map
 from agents.triage_agent import run_triage
 from memory.patient_store import store
@@ -115,20 +115,20 @@ def _escalation_banner(card: PatientCard) -> str | None:
 
 # ─── RAG Initialization ───────────────────────────────────────────────────────
 
-@st.cache_resource(show_spinner="Loading clinical knowledge base...")
-def _init_rag() -> bool:
+@st.cache_resource(show_spinner="Loading clinical reference...")
+def _init_rag() -> str:
     """
-    Build or load the vector store once per session.
+    Load the committed reference index once and report which retrieval mode is
+    active: "semantic", "lexical", or "none".
 
-    Returns whether grounding is available. Failure here is not fatal: the app
-    is designed to triage without retrieved context, so a missing knowledge
-    base or a missing embedding dependency degrades rather than crashes.
+    No index is built here — it is a committed artifact. Failure is not fatal:
+    the app is designed to triage without retrieved context.
     """
     try:
-        return ingest() is not None
+        return retrieval_mode()
     except Exception as e:
-        logger.warning("Knowledge base unavailable: %s", e)
-        return False
+        logger.warning("Reference index unavailable: %s", e)
+        return "none"
 
 
 # ─── Vitals Renderer ─────────────────────────────────────────────────────────
@@ -544,19 +544,26 @@ def _render_sidebar() -> None:
 # ─── Main Layout ──────────────────────────────────────────────────────────────
 
 def main() -> None:
-    grounded = _init_rag()
+    mode = _init_rag()
 
     _render_sidebar()
 
     # Kept in the sidebar: as a main-pane banner this re-rendered on every
     # interaction and pushed the dashboard down the page each time.
-    if not grounded:
+    if mode != "semantic":
         st.sidebar.markdown("---")
-        st.sidebar.info(
-            "No clinical knowledge base loaded. Triage still runs, but reasoning "
-            "is not grounded in retrieved guidelines. Add PDFs to `/data` and run "
-            "`python -m rag.ingest` to enable grounding."
-        )
+        if mode == "lexical":
+            st.sidebar.info(
+                "Retrieval is running in **lexical** mode. Reasoning is grounded "
+                "in the clinical reference, but matching is keyword-based. Set "
+                "`VOYAGE_API_KEY` to enable semantic search."
+            )
+        else:
+            st.sidebar.info(
+                "No clinical reference index loaded. Triage still runs, but "
+                "reasoning is not grounded in retrieved criteria. Build the index "
+                "with `python -m scripts.build_index`."
+            )
 
     # ── Dashboard Header ──────────────────────────────────────────────────────
     st.title("Emergency Department Triage")
