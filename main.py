@@ -6,10 +6,11 @@ import logging
 
 import streamlit as st
 
+from config import DEMO_MODE, LIVE_TRIAGE_LIMIT
 from rag.retriever import retrieval_mode
 from agents.assessment import vital_severity_map
 from agents.triage_agent import run_triage
-from memory.patient_store import store
+from memory.patient_store import file_store, load_seed_cards, session_store
 from models import (
     EscalationLevel,
     FindingSeverity,
@@ -129,6 +130,54 @@ def _init_rag() -> str:
     except Exception as e:
         logger.warning("Reference index unavailable: %s", e)
         return "none"
+
+
+# ─── Store Access ─────────────────────────────────────────────────────────────
+
+@st.cache_resource
+def _shared_store():
+    """
+    The durable, shared queue used when running locally.
+
+    Cached across sessions on purpose: one department, one queue.
+    """
+    return file_store()
+
+
+def _store():
+    """
+    Return the patient store for this request.
+
+    In DEMO_MODE the queue is scoped to the visitor's browser session. Without
+    that, every visitor to a public deployment would share one queue — seeing
+    each other's patients, and able to erase the whole board with the
+    end-of-shift reset.
+    """
+    if not DEMO_MODE:
+        return _shared_store()
+
+    if "_store" not in st.session_state:
+        store = session_store(st.session_state)
+        store.seed(load_seed_cards())
+        st.session_state["_store"] = store
+    return st.session_state["_store"]
+
+
+# ─── Demo Guardrails ──────────────────────────────────────────────────────────
+
+def _live_runs_used() -> int:
+    return st.session_state.get("_live_runs", 0)
+
+
+def _live_runs_remaining() -> int | None:
+    """Live triage runs left this session, or None when uncapped."""
+    if not DEMO_MODE:
+        return None
+    return max(0, LIVE_TRIAGE_LIMIT - _live_runs_used())
+
+
+def _record_live_run() -> None:
+    st.session_state["_live_runs"] = _live_runs_used() + 1
 
 
 # ─── Vitals Renderer ─────────────────────────────────────────────────────────
@@ -305,7 +354,7 @@ def _render_patient_card(card: PatientCard) -> None:
     # ── Prior Visit History ────────────────────────────────────────────────────
     if p.is_returning:
         prior = [
-            c for c in store.get_prior_visits(p.name)
+            c for c in _store().get_prior_visits(p.name)
             if c.patient.patient_id != p.patient_id
         ]
         if prior:
@@ -417,6 +466,20 @@ def _process_new_patient(
     temp: float,
 ) -> None:
     """Validate inputs, run the triage pipeline, persist the result."""
+    # The cap is checked before anything is persisted, so a refused run does
+    # not leave an orphaned pending stub in the queue.
+    remaining = _live_runs_remaining()
+    if remaining is not None and remaining <= 0:
+        _set_flash(
+            "warning",
+            f"Demo limit reached — {LIVE_TRIAGE_LIMIT} live triage runs per session. "
+            f"The seeded patients are still fully explorable.",
+        )
+        # Rerun so the message is actually seen. _render_flash() already ran
+        # earlier in this pass, so without this the refusal is silent and the
+        # button looks broken.
+        st.rerun()
+
     try:
         vitals = VitalSigns(
             heart_rate=hr,
@@ -435,12 +498,13 @@ def _process_new_patient(
             vitals=vitals,
         )
 
-        patient = store.check_in(patient)
+        patient = _store().check_in(patient)
 
         with st.spinner(f"Triaging {patient.name} — {patient.patient_id}..."):
             card = run_triage(patient)
+        _record_live_run()
 
-        store.save_card(card)
+        _store().save_card(card)
         st.session_state.selected_id = card.patient.patient_id
 
         # Flash messages go through session state: st.rerun() below discards
@@ -466,13 +530,13 @@ def _process_new_patient(
 def _run_search(query: str) -> None:
     """Search by patient ID (PT-XXXX) or partial name."""
     if query.upper().startswith("PT-"):
-        card = store.search_by_id(query)
+        card = _store().search_by_id(query)
         if card:
             st.session_state.selected_id = card.patient.patient_id
             st.rerun()
             return
 
-    results = store.search_by_name(query)
+    results = _store().search_by_name(query)
     if results:
         st.session_state.selected_id = results[0].patient.patient_id
         st.rerun()
@@ -517,6 +581,12 @@ def _render_sidebar() -> None:
         submitted = st.form_submit_button(
             "Check In & Triage", use_container_width=True, type="primary"
         )
+        remaining = _live_runs_remaining()
+        if remaining is not None:
+            st.caption(
+                f"Demo: {remaining} of {LIVE_TRIAGE_LIMIT} live triage runs left "
+                f"this session."
+            )
 
     if submitted:
         if not name.strip():
@@ -568,7 +638,7 @@ def main() -> None:
     # ── Dashboard Header ──────────────────────────────────────────────────────
     st.title("Emergency Department Triage")
 
-    stats = store.queue_stats()
+    stats = _store().queue_stats()
     s1, s2, s3, s4 = st.columns(4)
     s1.metric("In Department", stats["active"])
     s2.metric("Physician Now", stats["immediate"])
@@ -580,7 +650,7 @@ def main() -> None:
     # Scoped to the active queue and to IMMEDIATE only. Banners previously drew
     # from every card ever created, so they accumulated for the life of the
     # store and pushed the dashboard off screen.
-    active = store.get_queue()
+    active = _store().get_queue()
     errored = [c for c in active if c.has_system_error]
     # System errors escalate to IMMEDIATE too, but they are a pipeline failure,
     # not a clinical judgment, so they get their own notice rather than a
@@ -628,12 +698,12 @@ def main() -> None:
             _render_queue(queue, key_prefix="active")
 
         with tab_all:
-            _render_queue(store.get_all_cards(), key_prefix="all")
+            _render_queue(_store().get_all_cards(), key_prefix="all")
 
     with right:
         selected_id = st.session_state.get("selected_id")
         if selected_id:
-            card = store.get_card(selected_id)
+            card = _store().get_card(selected_id)
             if card:
                 _render_patient_card(card)
             else:
@@ -645,13 +715,31 @@ def main() -> None:
 
     # ── End-of-Shift Admin ────────────────────────────────────────────────────
     st.divider()
-    with st.expander("Admin — End of Shift Reset"):
-        st.warning("This action permanently deletes all patient records and cannot be undone.")
-        confirm = st.checkbox("I confirm I want to clear all patient records.")
-        if st.button("Clear All Records", disabled=not confirm, type="secondary"):
-            store.clear_all()
+    label = "Reset My Demo Session" if DEMO_MODE else "Admin — End of Shift Reset"
+    with st.expander(label):
+        if DEMO_MODE:
+            st.info(
+                "This clears only your own session and reloads the seeded "
+                "patients. Other visitors are unaffected."
+            )
+            button_text, confirm = "Reset Session", True
+        else:
+            st.warning(
+                "This permanently deletes all patient records and cannot be undone."
+            )
+            button_text = "Clear All Records"
+            confirm = st.checkbox("I confirm I want to clear all patient records.")
+
+        if st.button(button_text, disabled=not confirm, type="secondary"):
+            if DEMO_MODE:
+                # Rebuild the session queue from the seed rather than emptying
+                # it, so a visitor who resets still has something to explore.
+                st.session_state.pop("_store", None)
+                st.session_state.pop("_live_runs", None)
+            else:
+                _store().clear_all()
             st.session_state.pop("selected_id", None)
-            st.success("All records cleared. Ready for new shift.")
+            st.success("Reset complete.")
             st.rerun()
 
 
