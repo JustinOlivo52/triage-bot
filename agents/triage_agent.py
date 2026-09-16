@@ -64,11 +64,16 @@ class _TriageDecision(BaseModel):
 # ─── LLM Initializer ─────────────────────────────────────────────────────────
 
 def _get_llm() -> ChatAnthropic:
-    """Return the Claude instance used for ESI scoring."""
+    """
+    Return the Claude instance used for ESI scoring.
+
+    No `temperature` — current-generation models (Opus 5, Sonnet 5) reject
+    sampling params outright (400) in favor of adaptive thinking, which is on
+    by default and is what current models use for consistent output instead.
+    """
     return ChatAnthropic(
         model=TRIAGE_MODEL,
         api_key=ANTHROPIC_API_KEY,
-        temperature=0,
     )
 
 

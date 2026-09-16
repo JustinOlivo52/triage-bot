@@ -44,11 +44,15 @@ class _SummaryContent(BaseModel):
 
 
 def _get_llm() -> ChatAnthropic:
-    """Return the Claude instance used for physician alert narrative."""
+    """
+    Return the Claude instance used for physician alert narrative.
+
+    No `temperature` — Sonnet 5 rejects sampling params outright (400) in
+    favor of adaptive thinking, which is on by default.
+    """
     return ChatAnthropic(
         model=SUMMARY_MODEL,
         api_key=ANTHROPIC_API_KEY,
-        temperature=0,
     )
 
 
