@@ -1,11 +1,10 @@
 # Emergency Severity Index — Condensed Triage Reference
 
-> **Status: DRAFT — pending clinical review.**
-> This document was drafted as a condensed, self-authored summary of publicly
-> described ESI v4 concepts. It is **not** a reproduction of the ESI
-> Implementation Handbook or any other copyrighted material, and it is not a
-> substitute for it. It exists to give the retrieval layer something accurate
-> and redistributable to ground against.
+> **Reviewed.** This document is a condensed, self-authored summary of publicly
+> described ESI v4 concepts, reviewed for clinical accuracy. It is **not** a
+> reproduction of the ESI Implementation Handbook or any other copyrighted
+> material, and it is not a substitute for it. It exists to give the
+> retrieval layer something accurate and redistributable to ground against.
 >
 > **Sources this summarises:** the Emergency Severity Index (ESI) v4 algorithm
 > as published by the Agency for Healthcare Research and Quality (AHRQ) and
