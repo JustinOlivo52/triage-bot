@@ -16,7 +16,7 @@ from typing import Optional
 
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import SystemMessage, HumanMessage
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from config import ANTHROPIC_API_KEY, SUMMARY_MODEL
 from models import (
@@ -28,6 +28,7 @@ from models import (
     PhysicianSummary,
 )
 from agents.assessment import derive_escalation
+from agents.schema_utils import coerce_json_encoded_list
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +42,12 @@ class _SummaryContent(BaseModel):
     abnormal_vitals: list[str]     = Field(description="Out-of-range vitals with measured values")
     clinical_concerns: str         = Field(description="Paragraph summarizing the primary clinical concerns")
     recommended_actions: list[str] = Field(description="Immediate actions the physician should consider")
+
+    # See agents/schema_utils.py — the model can return a list field as a
+    # JSON-encoded string rather than a native array.
+    _coerce_lists = field_validator(
+        "trigger_reasons", "abnormal_vitals", "recommended_actions", mode="before"
+    )(coerce_json_encoded_list)
 
 
 def _get_llm() -> ChatAnthropic:
@@ -161,7 +168,9 @@ Generate the physician summary now.
     try:
         # Construct inside the try — an auth or config failure here must fall
         # through to the static summary below, not propagate.
-        llm = _get_llm().with_structured_output(_SummaryContent)
+        # See the matching comment in agents/triage_agent.py — json_schema is
+        # server-enforced, unlike the default forced-tool-call method.
+        llm = _get_llm().with_structured_output(_SummaryContent, method="json_schema")
         summary: _SummaryContent = llm.invoke([
             SystemMessage(content=system_prompt),
             HumanMessage(content=alert_input),

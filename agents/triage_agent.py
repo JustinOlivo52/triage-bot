@@ -16,7 +16,7 @@ import logging
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import SystemMessage, HumanMessage
 from langgraph.graph import StateGraph, START, END
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from config import ANTHROPIC_API_KEY, TRIAGE_MODEL
 from models import (
@@ -37,6 +37,7 @@ from agents.assessment import (
     format_thresholds_for_prompt,
 )
 from agents.escalation import build_escalation
+from agents.schema_utils import coerce_json_encoded_list
 from rag.retriever import retrieve_triage_context
 
 logger = logging.getLogger(__name__)
@@ -59,6 +60,13 @@ class _TriageDecision(BaseModel):
     esi_rationale: str                   = Field(description="Why this ESI level was assigned per ESI v4 criteria")
     clinical_reasoning: str              = Field(description="Full clinical reasoning narrative for this patient")
     recommended_interventions: list[str] = Field(description="Immediate nursing or clinical interventions to initiate")
+
+    # Caught running against a live key: the model occasionally returns a list
+    # field as a JSON-encoded string rather than a native array. Coerce before
+    # the normal type check runs, rather than fail an otherwise-correct response.
+    _coerce_lists = field_validator(
+        "extracted_symptoms", "recommended_interventions", mode="before"
+    )(coerce_json_encoded_list)
 
 
 # ─── LLM Initializer ─────────────────────────────────────────────────────────
@@ -186,7 +194,12 @@ CLINICAL REFERENCE CONTEXT:
         # Client construction is inside the try: a missing or malformed API key
         # fails here, not at invoke, and must reach the fail-safe path below
         # rather than crashing the graph.
-        llm = _get_llm().with_structured_output(_TriageDecision)
+        # method="json_schema" uses Claude's server-enforced structured-output
+        # feature rather than the default forced-tool-call method, which does
+        # not actually guarantee the model includes every required field.
+        # Caught in production: esi_score came back missing entirely under the
+        # default method on an otherwise well-formed response.
+        llm = _get_llm().with_structured_output(_TriageDecision, method="json_schema")
         decision: _TriageDecision = llm.invoke([
             SystemMessage(content=system_prompt),
             HumanMessage(content=patient_data),
