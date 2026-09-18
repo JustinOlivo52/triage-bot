@@ -13,6 +13,12 @@ memory/patient_store.json
 # before adding any document to a public repository.
 data/*.pdf
 
+# ─── Backend local dev database ───────────────────────────────────────────────
+# The real deployment target is Postgres (DATABASE_URL). SQLite files here are
+# local dev/scratch only — schema lives in backend/alembic/versions/, not here.
+*.db
+*.db-journal
+
 # ─── Python ───────────────────────────────────────────────────────────────────
 __pycache__/
 *.py[cod]

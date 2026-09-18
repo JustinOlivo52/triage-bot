@@ -1,0 +1,20 @@
+# ─── Backend service dependencies ──────────────────────────────────────────────
+#
+# Kept separate from the top-level requirements.txt on purpose: that file is
+# what Streamlit needs to deploy at its ~531MB footprint (see V2_PLAN.md /
+# CLAUDE.md for why that number matters). During the V2 migration, Streamlit
+# talks to this service over HTTP — it does not import FastAPI/SQLAlchemy/
+# bcrypt directly, so it should never need this file.
+#
+# Install both together only in the backend's own deployment / local dev:
+#   pip install -r requirements.txt -r backend/requirements.txt
+
+fastapi>=0.110.0
+uvicorn[standard]>=0.29.0
+sqlalchemy>=2.0.0
+alembic>=1.13.0
+pyjwt>=2.7.0
+bcrypt>=4.0.0
+python-multipart>=0.0.9
+psycopg2-binary>=2.9.0
+httpx>=0.27.0
