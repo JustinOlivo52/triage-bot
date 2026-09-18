@@ -30,6 +30,7 @@ class AuditAction(str, enum.Enum):
     PATIENT_VIEWED = "patient_viewed"
     USER_CREATED = "user_created"
     LOGIN = "login"
+    QUEUE_RESET = "queue_reset"
 
 
 class AuditLog(Base):

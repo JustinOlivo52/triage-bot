@@ -54,3 +54,18 @@ ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 
 CORS_ORIGINS: list[str] = [
     o.strip() for o in os.getenv("CORS_ORIGINS", "http://localhost:8501").split(",") if o.strip()
 ]
+
+# ─── Demo Mode ────────────────────────────────────────────────────────────────
+#
+# Deliberately its own flag rather than importing DEMO_MODE from the
+# top-level config.py, for the same reason risk_assessment.py doesn't import
+# EscalationLevel from models.py: backend/ has no import-time dependency on
+# the pipeline side of the repo. Set the same env var name on both processes
+# in a real deployment and they agree without either importing the other.
+#
+# On, this seeds fixed demo accounts and the demo patient cohort into the
+# shared database at startup (idempotent — safe on every restart) so a
+# public deployment shows a populated department immediately, the same way
+# V1's DEMO_MODE auto-loaded the seed cohort into a session-scoped store.
+DEMO_MODE: bool = _bool_env("DEMO_MODE")
+DEMO_ACCOUNT_PASSWORD: str = os.getenv("DEMO_ACCOUNT_PASSWORD", "demo1234")

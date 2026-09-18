@@ -3,6 +3,14 @@
 Steps 1 and 2 are done. Only Step 3 is left, and it needs your hosting
 account — I don't have a way to click through a provider's UI myself.
 
+> **Step 3 below is stale as of V2 Phase 4.** It describes deploying a
+> single Streamlit app that talks to the pipeline directly. As of Phase 4,
+> `main.py` is a thin client of `backend/`'s API (`BACKEND_API_URL`) — a real
+> deployment now needs the FastAPI service, a database, and `JWT_SECRET_KEY`
+> alongside Streamlit, not Streamlit alone. Rewriting this step properly is
+> V2 Phase 5's job (see `V2_PLAN.md`); until then, treat Step 3 as V1-only
+> and don't follow it as written for the current branch.
+
 ---
 
 ## Step 1 — Review the clinical reference ✅ done

@@ -1,27 +1,31 @@
 """
 main.py — Streamlit UI for the ED Triage System.
+
+V2 Phase 4: this is now a thin client of backend/'s API (api_client.py) —
+it no longer imports agents/ or memory/ at all. Every action, including
+reading the queue, is a real HTTP call carrying a JWT, the same as any other
+API consumer would make.
 """
 
 import logging
 
 import streamlit as st
 
+import api_client
 from config import DEMO_MODE, LIVE_TRIAGE_LIMIT
-from rag.retriever import retrieval_mode
-from agents.assessment import vital_severity_map
-from agents.triage_agent import run_triage
-from memory.patient_store import file_store, load_seed_cards, session_store
 from models import (
     EscalationLevel,
-    FindingSeverity,
-    Patient,
     PatientCard,
     SymptomStatus,
     TriageStatus,
-    VitalSigns,
 )
 
 logger = logging.getLogger(__name__)
+
+# The demo accounts' password — must match DEMO_ACCOUNT_PASSWORD's default in
+# backend/core/config.py. Shown on the login screen only, never fetched from
+# the API (an endpoint that reveals passwords would be its own problem).
+_DEMO_PASSWORD_HINT = "demo1234"
 
 # ─── Page Configuration ───────────────────────────────────────────────────────
 
@@ -79,13 +83,6 @@ _ESCALATION_CSS = {
     EscalationLevel.ELEVATED: "escalation-elevated",
 }
 
-# Severity is carried by a text marker as well as colour, so the signal
-# survives for colourblind users and in greyscale.
-_SEVERITY_STYLE = {
-    FindingSeverity.CRITICAL: ("vital-critical", " ▲ CRITICAL"),
-    FindingSeverity.CONCERNING: ("vital-concerning", " △ abnormal"),
-}
-
 _SYMPTOM_STATUS_MARK = {
     SymptomStatus.PRESENT: "🔴",
     SymptomStatus.DENIED: "⚪",
@@ -114,56 +111,51 @@ def _escalation_banner(card: PatientCard) -> str | None:
     return f'<div class="escalation-banner {css}">{label}</div>'
 
 
-# ─── RAG Initialization ───────────────────────────────────────────────────────
+# ─── Session / Auth ────────────────────────────────────────────────────────────
 
-@st.cache_resource(show_spinner="Loading clinical reference...")
-def _init_rag() -> str:
-    """
-    Load the committed reference index once and report which retrieval mode is
-    active: "semantic", "lexical", or "none".
-
-    No index is built here — it is a committed artifact. Failure is not fatal:
-    the app is designed to triage without retrieved context.
-    """
-    try:
-        return retrieval_mode()
-    except Exception as e:
-        logger.warning("Reference index unavailable: %s", e)
-        return "none"
+def _current_session() -> api_client.Session | None:
+    return st.session_state.get("session")
 
 
-# ─── Store Access ─────────────────────────────────────────────────────────────
+def _login_screen() -> None:
+    st.title("ED Triage System")
+    st.caption("Emergency Department — sign in to continue")
 
-@st.cache_resource
-def _shared_store():
-    """
-    The durable, shared queue used when running locally.
+    if DEMO_MODE:
+        st.info(
+            "**Demo credentials** — feel free to explore:\n\n"
+            f"- Nurse: `demo_nurse` / `{_DEMO_PASSWORD_HINT}`\n"
+            f"- Physician: `demo_physician` / `{_DEMO_PASSWORD_HINT}`\n"
+            f"- Admin: `demo_admin` / `{_DEMO_PASSWORD_HINT}`\n\n"
+            "One shared department queue — the same as real staff would see."
+        )
 
-    Cached across sessions on purpose: one department, one queue.
-    """
-    return file_store()
+    with st.form("login_form"):
+        username = st.text_input("Username")
+        password = st.text_input("Password", type="password")
+        submitted = st.form_submit_button("Log In", type="primary", use_container_width=True)
+
+    if submitted:
+        if not username.strip() or not password:
+            st.error("Enter a username and password.")
+        else:
+            try:
+                st.session_state["session"] = api_client.login(username.strip(), password)
+                st.rerun()
+            except api_client.ApiError as e:
+                st.error(f"Login failed: {e}")
 
 
-def _store():
-    """
-    Return the patient store for this request.
-
-    In DEMO_MODE the queue is scoped to the visitor's browser session. Without
-    that, every visitor to a public deployment would share one queue — seeing
-    each other's patients, and able to erase the whole board with the
-    end-of-shift reset.
-    """
-    if not DEMO_MODE:
-        return _shared_store()
-
-    if "_store" not in st.session_state:
-        store = session_store(st.session_state)
-        store.seed(load_seed_cards())
-        st.session_state["_store"] = store
-    return st.session_state["_store"]
+def _logout() -> None:
+    st.session_state.clear()
+    st.rerun()
 
 
 # ─── Demo Guardrails ──────────────────────────────────────────────────────────
+#
+# Live-triage runs still cost real API money even for a logged-in user, so
+# the per-browser-session cap from V1 survives the move to real auth — it's
+# a UI-side guardrail on top of, not instead of, login.
 
 def _live_runs_used() -> int:
     return st.session_state.get("_live_runs", 0)
@@ -184,54 +176,38 @@ def _record_live_run() -> None:
 
 def _render_vitals(card: PatientCard) -> None:
     """
-    Render vitals in two columns, marking out-of-range values.
+    Render vitals in two columns, with any abnormal findings called out below.
 
-    Severity comes from the same threshold logic the clinical rules use, so the
-    display can never disagree with the assessment.
+    V1 recomputed per-field severity client-side (agents.assessment.
+    vital_severity_map) to color each value individually. That function is
+    clinical assessment logic, and Phase 4's whole point is that the UI no
+    longer imports agents/ at all — duplicating threshold logic here to
+    re-derive per-field color would be exactly the kind of drift CLAUDE.md's
+    "single source of truth for clinical thresholds" rule exists to prevent.
+    The backend's own findings (already computed, already on the card) are
+    shown as a callout instead of being re-derived.
     """
     v = card.patient.vitals
-    severities = vital_severity_map(v)
-
-    def _span(text: str, *attrs: str) -> str:
-        """Style a value by the worst severity across the attributes it shows."""
-        found = [severities[a] for a in attrs if a in severities]
-        if FindingSeverity.CRITICAL in found:
-            css, marker = _SEVERITY_STYLE[FindingSeverity.CRITICAL]
-        elif found:
-            css, marker = _SEVERITY_STYLE[FindingSeverity.CONCERNING]
-        else:
-            css, marker = "vital-ok", ""
-        return f'<span class="{css}">{text}{marker}</span>'
+    vital_findings = [f.detail for f in card.escalation.findings if f.category.value == "vital"]
 
     col1, col2 = st.columns(2)
     with col1:
-        st.markdown(
-            f"**Heart Rate:** {_span(f'{v.heart_rate} bpm', 'heart_rate')}",
-            unsafe_allow_html=True,
-        )
-        # Both pressures are evaluated — a normal systolic must not mask a
-        # dangerous diastolic.
-        st.markdown(
-            f"**Blood Pressure:** {_span(v.bp_display, 'systolic_bp', 'diastolic_bp')}",
-            unsafe_allow_html=True,
-        )
-        st.markdown(
-            f"**Resp Rate:** {_span(f'{v.respiratory_rate} breaths/min', 'respiratory_rate')}",
-            unsafe_allow_html=True,
-        )
+        st.markdown(f"**Heart Rate:** {v.heart_rate} bpm")
+        st.markdown(f"**Blood Pressure:** {v.bp_display}")
+        st.markdown(f"**Resp Rate:** {v.respiratory_rate} breaths/min")
     with col2:
-        st.markdown(f"**SpO2:** {_span(f'{v.spo2}%', 'spo2')}", unsafe_allow_html=True)
-        st.markdown(
-            f"**Temperature:** "
-            f"{_span(f'{v.temperature_c}°C / {v.temperature_f}°F', 'temperature_c')}",
-            unsafe_allow_html=True,
-        )
+        st.markdown(f"**SpO2:** {v.spo2}%")
+        st.markdown(f"**Temperature:** {v.temperature_c}°C / {v.temperature_f}°F")
+
+    if vital_findings:
+        st.markdown(f'<span class="vital-critical">⚠ {"; ".join(vital_findings)}</span>', unsafe_allow_html=True)
 
 
 # ─── Patient Card Renderer ────────────────────────────────────────────────────
 
-def _render_patient_card(card: PatientCard) -> None:
+def _render_patient_card(session: api_client.Session, view: api_client.EncounterView) -> None:
     """Render the full structured patient card for the healthcare team."""
+    card = view.card
     p = card.patient
 
     # ── Header ────────────────────────────────────────────────────────────────
@@ -259,6 +235,8 @@ def _render_patient_card(card: PatientCard) -> None:
             st.markdown(banner, unsafe_allow_html=True)
         if not card.triage_result and not banner:
             st.info("Pending Triage")
+        if p.status is TriageStatus.RESOLVED:
+            st.caption("✅ Resolved")
 
     st.divider()
 
@@ -353,17 +331,37 @@ def _render_patient_card(card: PatientCard) -> None:
 
     # ── Prior Visit History ────────────────────────────────────────────────────
     if p.is_returning:
-        prior = [
-            c for c in _store().get_prior_visits(p.name)
-            if c.patient.patient_id != p.patient_id
-        ]
+        try:
+            prior = api_client.prior_visits(session, view.encounter_id)
+        except api_client.ApiError as e:
+            prior = []
+            st.caption(f"Could not load prior visits: {e}")
         if prior:
             with st.expander(f"Prior Visits ({len(prior)})"):
-                for visit in prior:
+                for pv in prior:
                     st.markdown(
-                        f"**{visit.patient.check_in_time.strftime('%b %d, %Y  %H:%M')}**  —  "
-                        f"{visit.patient.chief_complaint}  —  {visit.display_esi}"
+                        f"**{pv.card.patient.check_in_time.strftime('%b %d, %Y  %H:%M')}**  —  "
+                        f"{pv.card.patient.chief_complaint}  —  {pv.card.display_esi}"
                     )
+
+    # ── Disposition ─────────────────────────────────────────────────────────────
+    #
+    # Resolving is physician/admin, enforced server-side (backend/api/deps.py
+    # require_role); the form is only shown to roles that can actually submit
+    # it. This is the nurse-override/disposition workflow CLAUDE.md listed as
+    # a known gap — folded into Phase 4 since there was no route to audit
+    # until it existed.
+    if p.status is not TriageStatus.RESOLVED and session.role in ("physician", "admin"):
+        st.divider()
+        with st.form(f"resolve_form_{view.encounter_id}"):
+            note = st.text_input("Disposition note (optional)", placeholder="e.g. Discharged home, follow up PCP")
+            if st.form_submit_button("Mark Resolved"):
+                try:
+                    api_client.resolve(session, view.encounter_id, note.strip() or None)
+                    st.success(f"{p.patient_id} marked resolved.")
+                    st.rerun()
+                except api_client.ApiError as e:
+                    st.error(f"Could not resolve: {e}")
 
 
 # ─── Queue Renderer ───────────────────────────────────────────────────────────
@@ -394,9 +392,9 @@ def _queue_status(card: PatientCard) -> str:
     return f"**{esi}**"
 
 
-def _render_queue(cards: list[PatientCard], key_prefix: str = "q") -> None:
+def _render_queue(views: list[api_client.EncounterView], key_prefix: str = "q") -> None:
     """Render a patient list with a View button per row to select a patient."""
-    if not cards:
+    if not views:
         st.info("No patients to display.")
         return
 
@@ -410,7 +408,8 @@ def _render_queue(cards: list[PatientCard], key_prefix: str = "q") -> None:
     h1.markdown("**Chief Complaint**")
     h2.markdown("**Status**")
 
-    for card in cards:
+    for view in views:
+        card = view.card
         p = card.patient
         st.divider()
         c1, c2, c3 = st.columns(widths)
@@ -419,8 +418,8 @@ def _render_queue(cards: list[PatientCard], key_prefix: str = "q") -> None:
             tag = ' <span class="returning-tag">RET</span>' if p.is_returning else ""
             st.markdown(f"**{p.name}**{tag}", unsafe_allow_html=True)
             st.caption(f"{p.patient_id} · {p.age} yrs")
-            if st.button("Open", key=f"{key_prefix}_{p.patient_id}", use_container_width=True):
-                st.session_state.selected_id = p.patient_id
+            if st.button("Open", key=f"{key_prefix}_{view.encounter_id}", use_container_width=True):
+                st.session_state.selected_id = view.encounter_id
                 st.rerun()
         with c2:
             st.markdown(_truncate(p.chief_complaint))
@@ -454,6 +453,7 @@ def _render_flash() -> None:
 # ─── New Patient Processing ───────────────────────────────────────────────────
 
 def _process_new_patient(
+    session: api_client.Session,
     name: str,
     age: int,
     weight_kg: float,
@@ -465,9 +465,9 @@ def _process_new_patient(
     spo2: float,
     temp: float,
 ) -> None:
-    """Validate inputs, run the triage pipeline, persist the result."""
-    # The cap is checked before anything is persisted, so a refused run does
-    # not leave an orphaned pending stub in the queue.
+    """Send intake data to the backend and let it run the full pipeline."""
+    # The cap is checked before the request goes out, so a refused run never
+    # even reaches the backend.
     remaining = _live_runs_remaining()
     if remaining is not None and remaining <= 0:
         _set_flash(
@@ -481,75 +481,70 @@ def _process_new_patient(
         st.rerun()
 
     try:
-        vitals = VitalSigns(
-            heart_rate=hr,
-            systolic_bp=sbp,
-            diastolic_bp=dbp,
-            respiratory_rate=rr,
-            spo2=spo2,
-            temperature_c=temp,
-        )
-        patient = Patient(
-            patient_id="PENDING",
-            name=name,
-            age=age,
-            weight_kg=weight_kg,
-            chief_complaint=chief_complaint,
-            vitals=vitals,
-        )
-
-        patient = _store().check_in(patient)
-
-        with st.spinner(f"Triaging {patient.name} — {patient.patient_id}..."):
-            card = run_triage(patient)
+        with st.spinner(f"Triaging {name}..."):
+            view = api_client.check_in(
+                session,
+                full_name=name, age=age, weight_kg=weight_kg,
+                chief_complaint=chief_complaint,
+                vitals={
+                    "heart_rate": hr, "systolic_bp": sbp, "diastolic_bp": dbp,
+                    "respiratory_rate": rr, "spo2": spo2, "temperature_c": temp,
+                },
+            )
         _record_live_run()
 
-        _store().save_card(card)
-        st.session_state.selected_id = card.patient.patient_id
+        card = view.card
+        st.session_state.selected_id = view.encounter_id
 
         # Flash messages go through session state: st.rerun() below discards
-        # anything written directly to the sidebar, so the old direct calls
-        # were never visible to the user.
+        # anything written directly to the sidebar, so a direct call here
+        # would never be visible to the user.
         if card.has_system_error:
-            _set_flash("error", f"{patient.patient_id}: automated triage failed. Triage manually.")
+            _set_flash("error", f"{card.patient.patient_id}: automated triage failed. Triage manually.")
         elif card.needs_immediate_attention:
-            _set_flash("error", f"{patient.patient_id} — {card.display_esi}, physician needed now.")
+            _set_flash("error", f"{card.patient.patient_id} — {card.display_esi}, physician needed now.")
         elif card.is_escalated:
-            _set_flash("warning", f"{patient.patient_id} — {card.display_esi}, elevated concern.")
+            _set_flash("warning", f"{card.patient.patient_id} — {card.display_esi}, elevated concern.")
         else:
-            _set_flash("success", f"{patient.patient_id} triaged — {card.display_esi}")
+            _set_flash("success", f"{card.patient.patient_id} triaged — {card.display_esi}")
 
         st.rerun()
 
-    except Exception as e:
+    except api_client.ApiError as e:
         _set_flash("error", f"Triage error: {e}")
 
 
 # ─── Patient Search ───────────────────────────────────────────────────────────
 
-def _run_search(query: str) -> None:
+def _run_search(session: api_client.Session, query: str) -> None:
     """Search by patient ID (PT-XXXX) or partial name."""
-    if query.upper().startswith("PT-"):
-        card = _store().search_by_id(query)
-        if card:
-            st.session_state.selected_id = card.patient.patient_id
-            st.rerun()
-            return
+    try:
+        if query.upper().startswith("PT-"):
+            view = api_client.get_by_patient_identifier(session, query)
+            if view:
+                st.session_state.selected_id = view.encounter_id
+                st.rerun()
+                return
 
-    results = _store().search_by_name(query)
-    if results:
-        st.session_state.selected_id = results[0].patient.patient_id
-        st.rerun()
-    else:
-        st.sidebar.warning(f"No patient found for '{query}'.")
+        results = api_client.search(session, query)
+        if results:
+            st.session_state.selected_id = results[0].encounter_id
+            st.rerun()
+        else:
+            st.sidebar.warning(f"No patient found for '{query}'.")
+    except api_client.ApiError as e:
+        st.sidebar.error(f"Search failed: {e}")
 
 
 # ─── Sidebar ──────────────────────────────────────────────────────────────────
 
-def _render_sidebar() -> None:
-    """Intake form and patient search in the sidebar."""
+def _render_sidebar(session: api_client.Session) -> None:
+    """Account info, intake form, and patient search in the sidebar."""
     st.sidebar.title("ED Triage System")
-    st.sidebar.caption("Emergency Department — Patient Intake")
+    st.sidebar.caption(f"Signed in as **{session.username}** ({session.role})")
+    if st.sidebar.button("Log Out", use_container_width=True):
+        _logout()
+
     _render_flash()
     st.sidebar.markdown("---")
     st.sidebar.markdown("### New Patient Check-In")
@@ -595,6 +590,7 @@ def _render_sidebar() -> None:
             st.sidebar.error("Chief complaint is required.")
         else:
             _process_new_patient(
+                session,
                 name.strip(), age, weight_kg,
                 chief_complaint.strip(),
                 hr, sbp, dbp, rr, spo2, temp,
@@ -606,17 +602,41 @@ def _render_sidebar() -> None:
     query = st.sidebar.text_input("ID or Name", placeholder="PT-0001 or last name...")
     if st.sidebar.button("Search", use_container_width=True):
         if query.strip():
-            _run_search(query.strip())
+            _run_search(session, query.strip())
         else:
             st.sidebar.warning("Enter a patient ID or name to search.")
 
 
 # ─── Main Layout ──────────────────────────────────────────────────────────────
 
-def main() -> None:
-    mode = _init_rag()
+def _compute_stats(all_views: list[api_client.EncounterView], active_views: list[api_client.EncounterView]) -> dict:
+    """Same summary the old PatientStore.queue_stats() produced, computed
+    client-side over one fetched list instead of a server-side aggregate —
+    the queue is small enough (a department's worth of patients) that this
+    costs nothing and avoids a dedicated stats endpoint for one dashboard."""
+    return {
+        "total": len(all_views),
+        "active": len(active_views),
+        "immediate": sum(1 for v in active_views if v.card.needs_immediate_attention),
+        "elevated": sum(
+            1 for v in active_views
+            if v.card.is_escalated and not v.card.needs_immediate_attention
+        ),
+        "routine": sum(1 for v in active_views if not v.card.is_escalated and v.card.triage_result),
+        "pending": sum(1 for v in active_views if v.card.patient.status is TriageStatus.PENDING),
+        "system_errors": sum(1 for v in all_views if v.card.has_system_error),
+    }
 
-    _render_sidebar()
+
+def main() -> None:
+    session = _current_session()
+    if session is None:
+        _login_screen()
+        return
+
+    mode = api_client.retrieval_mode()
+
+    _render_sidebar(session)
 
     # Kept in the sidebar: as a main-pane banner this re-rendered on every
     # interaction and pushed the dashboard down the page each time.
@@ -631,14 +651,21 @@ def main() -> None:
         else:
             st.sidebar.info(
                 "No clinical reference index loaded. Triage still runs, but "
-                "reasoning is not grounded in retrieved criteria. Build the index "
-                "with `python -m scripts.build_index`."
+                "reasoning is not grounded in retrieved criteria."
             )
 
     # ── Dashboard Header ──────────────────────────────────────────────────────
     st.title("Emergency Department Triage")
 
-    stats = _store().queue_stats()
+    try:
+        all_views = api_client.list_encounters(session)
+    except api_client.ApiError as e:
+        st.error(f"Could not reach the backend: {e}")
+        return
+
+    active = [v for v in all_views if v.card.patient.status is not TriageStatus.RESOLVED]
+    stats = _compute_stats(all_views, active)
+
     s1, s2, s3, s4 = st.columns(4)
     s1.metric("In Department", stats["active"])
     s2.metric("Physician Now", stats["immediate"])
@@ -647,28 +674,28 @@ def main() -> None:
 
     # ── Active Alerts ─────────────────────────────────────────────────────────
     #
-    # Scoped to the active queue and to IMMEDIATE only. Banners previously drew
-    # from every card ever created, so they accumulated for the life of the
-    # store and pushed the dashboard off screen.
-    active = _store().get_queue()
-    errored = [c for c in active if c.has_system_error]
+    # Scoped to the active queue and to IMMEDIATE only, so banners don't
+    # accumulate for the life of the department and push the dashboard off
+    # screen.
+    errored = [v for v in active if v.card.has_system_error]
     # System errors escalate to IMMEDIATE too, but they are a pipeline failure,
     # not a clinical judgment, so they get their own notice rather than a
     # physician alert that implies the system assessed the patient.
     immediate = [
-        c for c in active
-        if c.needs_immediate_attention and not c.has_system_error
+        v for v in active
+        if v.card.needs_immediate_attention and not v.card.has_system_error
     ]
 
-    for c in immediate:
+    for v in immediate:
+        p = v.card.patient
         st.error(
-            f"PHYSICIAN ALERT — {c.patient.name}  |  {c.patient.patient_id}  |  "
-            f"{c.display_esi}  |  {_truncate(c.patient.chief_complaint, 80)}"
+            f"PHYSICIAN ALERT — {p.name}  |  {p.patient_id}  |  "
+            f"{v.card.display_esi}  |  {_truncate(p.chief_complaint, 80)}"
         )
     if errored:
         st.warning(
             f"{len(errored)} patient(s) could not be triaged automatically and need "
-            f"manual triage: {', '.join(c.patient.patient_id for c in errored)}"
+            f"manual triage: {', '.join(v.card.patient.patient_id for v in errored)}"
         )
 
     st.divider()
@@ -689,58 +716,46 @@ def main() -> None:
             }
             queue = sorted(
                 active,
-                key=lambda c: (
-                    _ESCALATION_RANK[c.escalation.level],
-                    c.esi_score if c.esi_score is not None else 0,
-                    c.patient.check_in_time,
+                key=lambda v: (
+                    _ESCALATION_RANK[v.card.escalation.level],
+                    v.card.esi_score if v.card.esi_score is not None else 0,
+                    v.card.patient.check_in_time,
                 ),
             )
             _render_queue(queue, key_prefix="active")
 
         with tab_all:
-            _render_queue(_store().get_all_cards(), key_prefix="all")
+            _render_queue(all_views, key_prefix="all")
 
     with right:
         selected_id = st.session_state.get("selected_id")
-        if selected_id:
-            card = _store().get_card(selected_id)
-            if card:
-                _render_patient_card(card)
-            else:
-                st.warning(f"Patient {selected_id} not found in store.")
+        selected_view = next((v for v in all_views if v.encounter_id == selected_id), None) if selected_id else None
+        if selected_view:
+            _render_patient_card(session, selected_view)
+        elif selected_id:
+            st.warning("That patient is not in the current queue.")
         else:
             st.info(
                 "Check in a new patient or select one from the queue to view their triage card."
             )
 
     # ── End-of-Shift Admin ────────────────────────────────────────────────────
-    st.divider()
-    label = "Reset My Demo Session" if DEMO_MODE else "Admin — End of Shift Reset"
-    with st.expander(label):
-        if DEMO_MODE:
-            st.info(
-                "This clears only your own session and reloads the seeded "
-                "patients. Other visitors are unaffected."
-            )
-            button_text, confirm = "Reset Session", True
-        else:
+    if session.role == "admin":
+        st.divider()
+        with st.expander("Admin — End of Shift Reset"):
             st.warning(
-                "This permanently deletes all patient records and cannot be undone."
+                "This permanently deletes all patient records and cannot be undone. "
+                "The audit log is never deleted by this — including the record of this reset."
             )
-            button_text = "Clear All Records"
             confirm = st.checkbox("I confirm I want to clear all patient records.")
-
-        if st.button(button_text, disabled=not confirm, type="secondary"):
-            if DEMO_MODE:
-                # Rebuild the session queue from the seed rather than emptying
-                # it, so a visitor who resets still has something to explore.
-                st.session_state.pop("_store", None)
-                st.session_state.pop("_live_runs", None)
-            else:
-                _store().clear_all()
-            st.session_state.pop("selected_id", None)
-            st.success("Reset complete.")
-            st.rerun()
+            if st.button("Clear All Records", disabled=not confirm, type="secondary"):
+                try:
+                    api_client.reset_queue(session)
+                    st.session_state.pop("selected_id", None)
+                    st.success("Reset complete.")
+                    st.rerun()
+                except api_client.ApiError as e:
+                    st.error(f"Reset failed: {e}")
 
 
 if __name__ == "__main__":

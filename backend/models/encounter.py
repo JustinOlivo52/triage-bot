@@ -52,3 +52,16 @@ class Encounter(Base):
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
     period_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # Not a FHIR field. The FHIR rows above (this Encounter, its Observations,
+    # its RiskAssessment) are the structured, queryable decomposition of a
+    # visit — but the pipeline's native PatientCard carries things no FHIR
+    # resource here has a slot for (recommended_interventions, extracted
+    # symptoms with present/denied/historical status, the structured physician
+    # summary, the escalation reasons list). Re-deriving all of that by
+    # parsing RiskAssessment.basis/rationale text back into structure would be
+    # fragile and pointless when the structured object already exists at
+    # persistence time. This column caches that object verbatim, serving the
+    # UI, while the FHIR rows remain the resource-shaped source of truth for
+    # anything that queries by LOINC code, risk level, etc.
+    card_json: Mapped[str | None] = mapped_column(Text, nullable=True)

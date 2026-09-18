@@ -1,11 +1,13 @@
 """
-backend/schemas/encounter.py — Request/response shapes for the check-in route.
+backend/schemas/encounter.py — Request/response shapes for encounter routes.
 
 `vitals` reuses the top-level `models.VitalSigns` directly rather than
 redefining the same six fields with the same constraints here — it's already
-exactly the shape intake collects. `CheckInResponse` reuses `models.PatientCard`
+exactly the shape intake collects. `EncounterOut` reuses `models.PatientCard`
 the same way, per V2_PLAN.md: the pipeline's native output shape is the API's
-response shape, and only the service layer in between knows FHIR exists.
+response shape, and only the service layer in between knows FHIR exists. It's
+the response for every encounter route — check-in, get, list, search, resolve
+all return the same {encounter_id, card} shape.
 """
 
 from pydantic import BaseModel, Field
@@ -21,6 +23,10 @@ class CheckInRequest(BaseModel):
     vitals: VitalSigns
 
 
-class CheckInResponse(BaseModel):
+class EncounterOut(BaseModel):
     encounter_id: str
     card: PatientCard
+
+
+class ResolveRequest(BaseModel):
+    note: str | None = Field(default=None, max_length=2000)
