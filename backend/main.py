@@ -7,7 +7,7 @@ Run with: uvicorn backend.main:app --reload
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from backend.api.routes import auth
+from backend.api.routes import auth, encounters
 from backend.core.config import CORS_ORIGINS
 
 app = FastAPI(
@@ -29,6 +29,7 @@ app.add_middleware(
 )
 
 app.include_router(auth.router)
+app.include_router(encounters.router)
 
 
 @app.get("/health")
