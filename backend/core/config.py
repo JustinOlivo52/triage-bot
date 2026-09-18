@@ -11,6 +11,16 @@ ever imported inside backend/.
 import os
 import secrets
 
+from dotenv import load_dotenv
+
+# Unlike the top-level config.py, this module previously read only real
+# environment variables — a .env file worked for Streamlit (which does call
+# load_dotenv()) but silently did nothing for the backend, so JWT_SECRET_KEY
+# etc. would only ever come from a real export. Loading it here too means
+# one .env file configures both processes, which is what the README's setup
+# instructions assume.
+load_dotenv()
+
 
 def _bool_env(name: str, default: str = "false") -> bool:
     return os.getenv(name, default).strip().lower() in {"1", "true", "yes"}

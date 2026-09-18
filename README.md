@@ -1,6 +1,10 @@
-# Triage Bot — ED Triage RAG AI Assistant
+# Triage Bot — ED Triage Assistant
 
-An AI-powered emergency department triage assistant built with LangGraph, LangChain, and Claude. Combines retrieval-augmented generation (RAG) grounded in clinical guidelines with a deterministic multi-layer red flag system to assist triage nurses and physicians with ESI scoring and high-risk patient identification.
+An AI-powered emergency department triage assistant: a FastAPI backend with a
+real, role-gated auth model and a FHIR-shaped data model, a Streamlit UI that
+talks to it over HTTP, and a LangGraph pipeline that combines deterministic
+clinical rules with retrieval-augmented Claude reasoning for ESI scoring and
+high-risk patient identification.
 
 > **Clinical Disclaimer:** This tool is a decision-support prototype only. It does not replace clinical judgment or qualified medical personnel. All triage decisions must be validated by a licensed clinician.
 
@@ -8,18 +12,19 @@ An AI-powered emergency department triage assistant built with LangGraph, LangCh
 
 ## What It Does
 
-- Accepts patient intake (name, age, weight, chief complaint, vitals)
-- Runs a **deterministic clinical assessment** (vitals, symptoms, age risk) with no LLM cost
+- Nurse/physician/admin accounts, JWT-authenticated, backed by a role check on every route — not a public toy demo
+- Accepts patient intake (name, age, weight, chief complaint, vitals) and runs a **deterministic clinical assessment** (vitals, symptoms, age risk) with no LLM cost
 - Assigns an **ESI 1–5 score to every patient** via LLM reasoning grounded in clinical guidelines through RAG
 - Derives an **escalation level** from that score plus the deterministic findings, and alerts the physician when it is immediate
-- Maintains a **persistent multi-patient queue** with unique patient IDs (PT-0001 format) and returning patient detection across sessions
+- Persists every check-in as **FHIR-shaped records** (`Patient`, `Encounter`, `Observation`, `RiskAssessment`) in a real database, not a JSON file
+- Lets a physician **resolve/dispose** an encounter, and lets an admin read the **append-only audit log** of who did what
 - Displays a structured **PatientCard** with vitals, ESI score, escalation status, clinical reasoning, and recommended interventions
 
 ---
 
 ## Scoring and Escalation
 
-Acuity and urgency are one clinical judgment, not two competing branches. Every patient is scored, and escalation is layered on top of that score rather than replacing it.
+Acuity and urgency are one clinical judgment, not two competing branches. Every patient is scored, and escalation is layered on top of that score rather than replacing it. This part of the system is unchanged since it was hardened in V1 — the V2 work below wraps it in a real service, it doesn't touch the clinical logic itself.
 
 ```
 assess (deterministic)  →  triage (ESI 1–5)  →  escalate (derived)  →  patient card
@@ -60,26 +65,85 @@ Age is not a finding on its own. Pediatric (≤5) and geriatric (≥65) patients
 
 ## Architecture
 
+Two services. Streamlit is a thin HTTP client — it holds no business logic, no storage, and imports nothing from `agents/` or `memory/`. Every action, including reading the queue, is a real API call carrying a JWT.
+
 ```
-Streamlit UI
-    │
-    ▼
-PatientStore (JSON persistence)
-    │
-    ▼
-LangGraph StateGraph  —  linear, every patient traverses every node
-    │
-    ├── assess_node      deterministic findings (vitals, symptoms, age) — no LLM
-    │        │
-    ├── triage_node      ESI 1–5 scoring (LLM + RAG), sees the findings
-    │        │
-    ├── escalate_node    derive escalation; physician summary if IMMEDIATE
-    │        │
-    └── build_card_node
-             │
-             ▼
-         PatientCard  (ESI score + escalation level, always both)
+┌──────────────┐   HTTP + JWT    ┌──────────────────────────────────┐
+│  Streamlit   │ ──────────────► │           FastAPI backend         │
+│  (main.py)   │ ◄────────────── │                                    │
+│              │                 │  api/routes/  auth · encounters ·  │
+│ api_client.py│                 │               audit                │
+└──────────────┘                 │  api/deps.py  get_current_user,    │
+                                  │               require_role(...)   │
+                                  │                                    │
+                                  │  services/                        │
+                                  │   ├─ triage_service ──────────────┼──► agents/triage_agent.py
+                                  │   │   (FHIR persistence boundary)  │    (LangGraph pipeline,
+                                  │   ├─ audit_service                 │     unchanged — no FHIR
+                                  │   └─ demo_seed                     │     awareness at all)
+                                  │                                    │
+                                  │  db/  SQLAlchemy + Alembic         │
+                                  └────────────────┬───────────────────┘
+                                                   │
+                                  ┌────────────────▼───────────────────┐
+                                  │      Postgres (prod) / SQLite       │
+                                  │  users · patients · encounters ·    │
+                                  │  observations · risk_assessments ·  │
+                                  │  audit_logs                         │
+                                  └──────────────────────────────────────┘
 ```
+
+Inside `agents/triage_agent.py`, the pipeline itself is still the same linear graph:
+
+```
+assess_node → triage_node → escalate_node → build_card_node
+```
+
+- `assess_node` — vitals only, against `config.py` thresholds. No LLM.
+- `triage_node` — the LLM call. Assigns ESI 1–5 **and** extracts symptom status from the chief complaint in the same call.
+- `escalate_node` — combines vital + symptom findings, applies age risk, derives escalation, generates a physician summary only if `IMMEDIATE`.
+- `build_card_node` — assembles the `PatientCard` returned to the API layer.
+
+`backend/services/triage_service.py` is the only place that knows both languages: it calls `run_triage()` unchanged, then maps the resulting `PatientCard` onto the FHIR-shaped rows below. The pipeline has zero awareness that FHIR, a database, or an API even exist.
+
+---
+
+## Data Model: FHIR-Shaped, Not FHIR-Certified
+
+Real FHIR resource names and field semantics, mapped onto what the app actually collects — a legitimate signal to anyone who knows EHR data (Epic, Cerner, any HL7-conformant shop), but **not** a certified FHIR server: no terminology binding, no `$validate`, no complete resource set.
+
+| Our concept | FHIR resource | Why this one |
+|---|---|---|
+| A person | `Patient` | identifier, name, birthDate, gender |
+| One ED visit | `Encounter` | status, class=`EMER`, period, reasonCode (chief complaint) |
+| One vital sign reading | `Observation` | code (LOINC), valueQuantity, effectiveDateTime — **one row per vital**, not one blob, because that's how a real EHR stores it |
+| ESI score + escalation | `RiskAssessment` | subject, encounter, basis, prediction.outcome, prediction.qualitativeRisk, rationale — the actual FHIR resource for "here is an acuity/risk judgment about this patient" |
+
+Every simplification is stated in the code, not left silent: `full_name` is one field, not FHIR's structured `HumanName`; `birth_date` is estimated from age at check-in (`birth_date_is_estimated` says so explicitly); `Encounter.reasonCode` is free text rather than a coded `CodeableConcept`; weight is modeled as an `Observation` (LOINC 29463-7), not a `Patient` field, matching real FHIR. `RiskAssessment.qualitativeRisk` uses FHIR's own risk-probability value set (`negligible | low | moderate | high | certain`), mapped from our escalation levels rather than inventing a parallel vocabulary.
+
+`Encounter.card_json` caches the pipeline's native `PatientCard` output (recommended interventions, extracted symptoms, physician summary) alongside the FHIR rows — reconstructing that structure from `RiskAssessment.basis`/`.rationale` text alone would mean re-parsing free text back into structure. The FHIR rows stay the source of truth for anything that queries by LOINC code or risk level; the cache is what the UI actually reads.
+
+---
+
+## Auth & Roles
+
+JWT bearer tokens (PyJWT), bcrypt password hashing, three roles enforced by a FastAPI dependency (`require_role(...)`) rather than scattered `if` checks in route bodies:
+
+| Role | Can do |
+|---|---|
+| `nurse` | Check in patients, run triage, read the queue, search |
+| `physician` | Everything a nurse can, **+** resolve/dispose an encounter |
+| `admin` | Everything a physician can, **+** read the audit log, create accounts, end-of-shift reset |
+
+A role hierarchy ("physician can do what a nurse can") is expressed by listing every role a route accepts, not by ordinal comparison — explicit over implicit, since that's not a fact the codebase should quietly assume everywhere.
+
+**Demo mode** (`DEMO_MODE=true`): seeds three fixed accounts on startup — `demo_nurse` / `demo_physician` / `demo_admin`, all password `demo1234` (`DEMO_ACCOUNT_PASSWORD`) — plus the committed patient cohort (`data/seed_cohort.json`) into one real, shared department queue. Everyone who logs in, including a recruiter clicking through, sees the same thing real staff would see. Seeding is idempotent: safe on every restart, and it never overwrites real check-ins.
+
+---
+
+## Audit Log
+
+Every mutating action writes one append-only row: `actor_user_id`, `action`, `resource_type`, `resource_id`, `timestamp`, JSON `metadata`. Covered today: login, account creation, patient check-in, triage run (and triage system-error), escalation resolution, and the end-of-shift reset. Append-only is enforced at the application layer — `GET /audit` (admin-only) is the only audit route; there is no update or delete endpoint, and a reset never deletes audit rows, including the row recording the reset itself. (A future hardening pass could add a database-level rule blocking `UPDATE`/`DELETE` on the table too — noted as a follow-up, not done here, since SQLite in the test suite has no equivalent mechanism to verify it against.)
 
 ---
 
@@ -87,14 +151,14 @@ LangGraph StateGraph  —  linear, every patient traverses every node
 
 | Layer | Technology |
 |-------|-----------|
-| UI | Streamlit |
+| Backend API | FastAPI, Uvicorn |
+| Auth | PyJWT, bcrypt |
+| Database | SQLAlchemy 2.0 + Alembic — Postgres in production, SQLite for local dev and tests |
+| UI | Streamlit (thin API client — `requests`) |
 | Orchestration | LangGraph + LangChain |
 | LLM | Anthropic Claude — `claude-opus-5` for ESI scoring, `claude-sonnet-5` for alert narrative |
-| RAG / Vector Store | ChromaDB (local, persistent) |
-| Embeddings | HuggingFace `all-MiniLM-L6-v2` (CPU, no API cost) |
-| Document Loading | PyMuPDF (`fitz`) |
+| Retrieval | Precomputed JSON index (`data/reference_index.json`), numpy cosine similarity — Voyage AI embeddings when a key is present, token-overlap lexical search otherwise, no embeddings at all as the last fallback |
 | Data Validation | Pydantic v2 |
-| Persistence | JSON flat-file patient store |
 
 ---
 
@@ -102,66 +166,115 @@ LangGraph StateGraph  —  linear, every patient traverses every node
 
 ```
 triage-bot/
-├── main.py                  # Streamlit UI
-├── config.py                # Central config, clinical thresholds, model settings
-├── models.py                # Pydantic v2 data models + LangGraph TypedDict state
-├── requirements.txt
-├── .env.example             # Environment variable template
+├── main.py                  # Streamlit UI — thin client of backend/'s API
+├── api_client.py            # HTTP wrapper main.py calls instead of importing agents/ or memory/
+├── config.py                # Pipeline config: models, clinical thresholds, retrieval settings
+├── models.py                # Pydantic v2 domain models + LangGraph TypedDict state
+├── requirements.txt         # Streamlit + pipeline dependencies (~531MB footprint)
 │
 ├── agents/
-│   ├── assessment.py        # Deterministic clinical rules + escalation logic (pure, no LLM)
+│   ├── assessment.py        # Deterministic clinical rules (pure, no LLM)
 │   ├── escalation.py        # Escalation assembly + physician alert generation
-│   └── triage_agent.py      # LangGraph StateGraph + triage/extraction node
-│
-├── tests/
-│   └── test_assessment.py   # Clinical rule tests — no API key, no network
-│
-├── .github/workflows/
-│   └── tests.yml            # CI: runs the suite on minimal dependencies
+│   ├── triage_agent.py      # LangGraph StateGraph — assess/triage/escalate/build_card
+│   └── schema_utils.py      # Defensive coercion for structured LLM output
 │
 ├── rag/
-│   ├── ingest.py            # PDF loading, chunking, embedding, ChromaDB ingestion
-│   └── retriever.py         # Similarity search and context formatting
+│   ├── ingest.py             # Markdown → chunk → embed → JSON index (build-time)
+│   ├── embeddings.py         # Voyage API calls
+│   └── retriever.py          # Cosine/lexical search, formatted context
 │
-├── memory/
-│   └── patient_store.py     # JSON-backed persistent patient queue
+├── memory/                  # Superseded by backend/ for the running app;
+│   ├── backends.py          #  kept for local/offline use of the pipeline directly
+│   └── patient_store.py     #  and for load_seed_cards(), reused by backend/services/demo_seed.py
 │
-└── data/                    # Place clinical guideline PDFs here (gitignored)
+├── backend/                  # The real service
+│   ├── main.py                # FastAPI app, CORS, demo-seed startup hook, /health
+│   ├── core/
+│   │   ├── config.py           # Service settings — DB URL, JWT secret, CORS, demo mode
+│   │   └── security.py         # Password hashing, JWT issue/verify
+│   ├── db/                    # SQLAlchemy engine/session + declarative base
+│   ├── models/                 # User, Patient, Encounter, Observation, RiskAssessment, AuditLog
+│   ├── schemas/                 # Pydantic request/response shapes for the API
+│   ├── services/
+│   │   ├── triage_service.py    # The FHIR persistence boundary — check-in/triage/resolve/reset
+│   │   ├── audit_service.py     # Read-only audit trail queries
+│   │   └── demo_seed.py         # Fixed demo accounts + seed cohort, idempotent
+│   ├── api/
+│   │   ├── deps.py              # get_current_user, require_role(...)
+│   │   └── routes/              # auth.py, encounters.py, audit.py
+│   ├── alembic/                 # Migrations — the record of how the schema evolved
+│   └── requirements.txt         # Backend-only deps, kept separate from the top-level file
+│
+├── data/                     # Clinical reference, precomputed index, seed cohort — committed
+│
+├── tests/
+│   ├── test_assessment.py, test_retrieval.py, test_store.py, test_schema_utils.py
+│   │                          # Pure logic — no API key, no network, no backend
+│   └── backend/               # API + DB tests — SQLite in-memory, still no LLM key needed
+│
+└── .github/workflows/
+    └── tests.yml              # CI: pure-logic job (narrow deps) + full-suite job (everything)
 ```
 
 ---
 
 ## Setup
 
+Two processes: the backend (FastAPI) and the UI (Streamlit). Both read the same `.env`.
+
 ### 1. Clone and install
 
 ```bash
-git clone https://github.com/your-username/triage-bot.git
+git clone https://github.com/JustinOlivo52/triage-bot.git
 cd triage-bot
-pip install -r requirements.txt
+pip install -r requirements.txt -r backend/requirements.txt
 ```
 
 ### 2. Configure environment
 
 ```bash
 cp .env.example .env
-# Add your Anthropic API key to .env
 ```
 
-### 3. Add clinical guidelines (optional but recommended)
+Fill in at minimum `ANTHROPIC_API_KEY` and `JWT_SECRET_KEY` (generate one: `python -c "import secrets; print(secrets.token_hex(32))"`). Everything else in `.env.example` has a documented default — see the comments there for what each one does.
 
-Place PDF clinical guidelines (ESI guidelines, clinical protocols, etc.) in the `/data` folder, then run:
+### 3. Run the database migrations
 
 ```bash
-python -m rag.ingest
+python -m alembic -c backend/alembic.ini upgrade head
 ```
 
-The app will run without PDFs — the LLM will rely on its training knowledge — but RAG grounding significantly improves triage accuracy.
+Creates a local SQLite file by default (`DATABASE_URL` in `.env.example`). Point `DATABASE_URL` at Postgres for anything beyond local dev.
 
-### 4. Launch
+### 4. Add clinical reference grounding (optional)
+
+The committed `data/reference_index.json` already works out of the box (lexical search, no key needed). For semantic search, add `VOYAGE_API_KEY` to `.env` and rebuild:
 
 ```bash
+python -m scripts.build_index
+```
+
+### 5. Launch both services
+
+```bash
+# Terminal 1
+uvicorn backend.main:app --reload
+
+# Terminal 2
 streamlit run main.py
+```
+
+Set `DEMO_MODE=true` in `.env` before starting the backend to get a populated department and working demo logins on first run (see **Auth & Roles** above). Without it, the backend starts with an empty database and no accounts — create the first one directly, since account creation itself requires an existing admin:
+
+```python
+# one-off, from the repo root, with DATABASE_URL / JWT_SECRET_KEY set
+from backend.db.session import SessionLocal
+from backend.core.security import hash_password
+from backend.models.user import User, UserRole
+
+db = SessionLocal()
+db.add(User(username="admin", hashed_password=hash_password("change-me"), full_name="Admin", role=UserRole.ADMIN))
+db.commit()
 ```
 
 ---
@@ -169,13 +282,17 @@ streamlit run main.py
 ## Tests
 
 ```bash
-pip install -r requirements-dev.txt
+pip install -r requirements-dev.txt -r backend/requirements.txt
 pytest
 ```
 
-The clinical rules in `agents/assessment.py` are pure functions with no LLM, network, or embedding dependency, so the suite runs in well under a second and needs **no API key**. CI installs only `pydantic`, `python-dotenv` and `pytest` — if these tests ever start needing the full stack, the pure logic has leaked a dependency and the build fails.
+182 tests, well under a second for the deterministic core and well under a minute total, with **no API key and no network** — every LLM call any test would otherwise need is stubbed at the same boundary `agents/triage_agent.py` exposes for it.
 
-Coverage is the deterministic core: threshold tiering and boundary conditions, the extraction-to-findings mapping (including out-of-vocabulary rejection), age amplification, and escalation derivation. The confirmed false positives that motivated the rewrite are pinned as regression tests.
+Two CI jobs mirror that same split (`.github/workflows/tests.yml`):
+- **pure-logic** — `agents/assessment.py`, `memory/`, and `rag/`'s lexical path, installed with a deliberately narrow dependency list (no LangChain, no FastAPI). If these tests ever start needing more than that, one of the "pure" modules has leaked a dependency it shouldn't have, and the job fails on purpose.
+- **full-suite** — everything: the LangGraph pipeline, RAG's semantic-path imports, and the FastAPI/SQLAlchemy backend together.
+
+Coverage includes: threshold tiering and boundary conditions, the extraction-to-findings mapping (including out-of-vocabulary rejection and the confirmed false positives that motivated the rewrite), age amplification, escalation derivation, FHIR model round-trips, JWT issue/verify and role enforcement per route, the full check-in→triage→persistence path with a stubbed LLM, and the audit trail (every mutating action produces exactly one row with the right actor/action/resource).
 
 ---
 
@@ -183,52 +300,57 @@ Coverage is the deterministic core: threshold tiering and boundary conditions, t
 
 - **Every patient gets a score** — escalation is reported alongside the ESI level, never instead of it
 - **Negation-aware symptom handling** — "denies chest pain" and "history of stroke in 2019" are read as what they are, via structured extraction on the existing triage call
-- **Testable clinical rules** — all threshold and escalation logic lives in `agents/assessment.py` as pure functions with no LLM or network dependency, covered by a test suite that runs in CI without an API key
+- **Testable clinical rules** — all threshold and escalation logic lives in `agents/assessment.py` as pure functions with no LLM or network dependency
 - **Single source of truth for thresholds** — the triage prompt renders its vital-sign ranges from `config.py`, so the prompt cannot drift from the code
-- **Two-tier severity** — critical and concerning findings are distinguished rather than collapsed into one binary flag
+- **Real auth, real roles** — JWT + bcrypt, three roles enforced server-side via one dependency, not scattered checks
+- **FHIR-shaped persistence** — `Patient`/`Encounter`/`Observation`/`RiskAssessment` in a real database, with every simplification against true FHIR stated in the code
+- **Append-only audit trail** — every mutating action logged, readable only by admin, survives even the end-of-shift reset
+- **Structured LLM output** — Pydantic v2 schema-enforced responses via `with_structured_output(..., method="json_schema")`, not the default forced-tool-call method (which doesn't actually guarantee every field is populated — caught running against a real key)
 - **Cost-aware escalation** — only `IMMEDIATE` patients trigger a physician-summary LLM call
-- **Structured LLM output** — Pydantic v2 schema-enforced responses via `with_structured_output()`, no hallucinated JSON fields
-- **Abnormal vital highlighting** — the UI reads the same thresholds the clinical rules use, and marks severity with text as well as colour so the signal survives in greyscale
-- **Honest failure modes** — a pipeline failure is surfaced as a system error, not disguised as a clinical alert or a fabricated ESI 3
-- **Runs ungrounded** — with no guideline PDFs the app degrades to unretrieved reasoning instead of failing to start
-- **Persistent patient queue** — survives app restarts, JSON-backed
-- **Returning patient detection** — flags patients with prior visits by name matching across sessions
-- **Cost-efficient embeddings** — local HuggingFace embeddings mean zero embedding API cost
+- **Honest failure modes** — a pipeline failure is surfaced as a system error, never disguised as a clinical alert or a fabricated ESI score
+- **Retrieval degrades in steps, not all-or-nothing** — semantic search (Voyage key) → lexical search (no key) → ungrounded reasoning (no index), never a crash
+- **Zero-dependency clinical-rules testing** — 182 tests, no API key or network, split across two CI jobs so the pure logic's dependency guarantee is actually enforced, not just claimed
 
 ---
 
 ## V2 Roadmap
 
-**Done**
+**Done (V1 — the clinical pipeline and its hardening)**
 - [x] Separate ESI scoring from escalation so every patient is scored
-- [x] Two-tier finding severity (critical vs concerning)
-- [x] Pure, dependency-free clinical rules module
-- [x] System failures distinguished from clinical alerts
-- [x] `.env.example` and setup documentation
-
 - [x] Structured symptom extraction handling negation and history
+- [x] Two-tier finding severity (critical vs concerning), single source of truth for thresholds
+- [x] System failures distinguished from clinical alerts
+- [x] Atomic writes, session-scoped storage for the (now superseded) file-backed store
+- [x] RAG stack slimmed from ~1.6GB (torch/chromadb) to precomputed embeddings + numpy
 - [x] Test suite over the deterministic clinical rules, running in CI
 
+**Done (V2 — the FastAPI backend, FHIR model, auth, and full UI migration)**
+- [x] Phase 1 — Backend skeleton: FastAPI, SQLAlchemy + Alembic, FHIR-shaped schema, JWT auth
+- [x] Phase 2 — Vertical slice: check-in → triage → FHIR persistence, one real endpoint
+- [x] Phase 3 — Append-only audit log wired to every mutating route, admin-only read endpoint
+- [x] Phase 4 — Streamlit fully migrated off direct `agents/`/`memory/` imports onto the API; real login replaces the old anonymous demo-session model; nurse-override/disposition workflow added
+- [x] CI fixed — a pre-existing dependency gap had left it silently red since the V1 RAG rewrite; now split into a narrow pure-logic job and a full-suite job, both verified in clean environments
+
 **Next**
-- [ ] Eval set of clinician-scored vignettes with a measured agreement rate
-- [ ] Atomic writes and a single cached read per render in the patient store
-- [ ] Nurse annotation / override workflow
+- [ ] Eval set of clinician-scored vignettes with a measured agreement rate (would turn the Opus/Sonnet model split from a reasoned default into a measured one)
 - [ ] Age-banded vital thresholds (current ranges are adult values)
-- [ ] Audit log for all triage decisions
-- [ ] Shift handoff report generation
-- [ ] Load and index clinical guideline PDFs into ChromaDB
+- [ ] Consolidate a returning patient's visits under one FHIR `Patient` with multiple `Encounter`s, rather than a fresh `Patient` row per visit
+- [ ] Database-level append-only enforcement on `audit_logs` (currently application-layer only)
+- [ ] Deploy — needs a hosting decision for two services + a database, not just Streamlit Community Cloud (see `DEPLOY.md`)
 
 ---
 
 ## Known Limitations
 
 - **Vital thresholds are adult values.** They are applied to all ages. A well 3-year-old sits around HR 110 / RR 26 and will register as tachycardic and tachypneic.
-- **Writes are not atomic.** A crash mid-write can corrupt the patient store.
 - **No accuracy measurement yet.** There is no eval set, so the system's agreement with expert ESI assignment is currently unknown. Model choice per role is a reasoned default, not a measured one.
-- **The fallback scan is naive.** If the triage call fails, symptom detection degrades to the substring scan, which cannot handle negation. This is deliberate — a few false positives beat losing symptom detection entirely on an already-degraded path — but findings on a system-error card should be read with that in mind.
+- **The fallback symptom scan is naive.** If the triage call fails, symptom detection degrades to a substring scan, which cannot handle negation — deliberate (a few false positives beat losing detection entirely on an already-degraded path), but findings on a system-error card should be read with that in mind.
+- **`patient_identifier` generation isn't concurrency-safe.** It's a count-and-increment, not a DB sequence — fine for demo traffic, a real race under concurrent check-ins.
+- **A `Patient` row is created fresh per visit**, not reused across a returning patient's encounters — see the V2 Roadmap above.
+- **FHIR-shaped, not FHIR-certified.** No terminology binding, no `$validate`, no complete resource set — see the Data Model section above for exactly what's simplified and why.
 
 ---
 
 ## Background
 
-Built by an AI Engineer with 9 years of clinical emergency department experience. The red flag criteria, vital thresholds, and ESI scoring logic reflect real-world ED triage practice and ESI v4 guidelines.
+Built by a current ED nurse transitioning into AI/health-tech engineering. The red flag criteria, vital thresholds, and ESI scoring logic reflect real-world ED triage practice and ESI v4 guidelines; the service architecture, auth model, and FHIR-shaped data model reflect what a health-tech engineering team would actually build around that clinical logic, not just a demo wrapped around a prompt.

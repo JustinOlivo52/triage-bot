@@ -7,9 +7,12 @@ account — I don't have a way to click through a provider's UI myself.
 > single Streamlit app that talks to the pipeline directly. As of Phase 4,
 > `main.py` is a thin client of `backend/`'s API (`BACKEND_API_URL`) — a real
 > deployment now needs the FastAPI service, a database, and `JWT_SECRET_KEY`
-> alongside Streamlit, not Streamlit alone. Rewriting this step properly is
-> V2 Phase 5's job (see `V2_PLAN.md`); until then, treat Step 3 as V1-only
-> and don't follow it as written for the current branch.
+> alongside Streamlit, not Streamlit alone. README.md's Architecture and Setup
+> sections describe the two-service shape and how to run both locally; this
+> file's Step 3 stays unrewritten because *which* host(s) to actually deploy
+> to is still your call — same reason it was deferred before. Treat Step 3 as
+> V1-only and don't follow it as written for the current branch until we pick
+> a hosting approach for two services + a database together.
 
 ---
 
