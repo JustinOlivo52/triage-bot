@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from backend.api.routes import auth, encounters
+from backend.api.routes import audit, auth, encounters
 from backend.core.config import CORS_ORIGINS, DEMO_MODE
 from backend.db.session import SessionLocal
 from backend.services.demo_seed import run_demo_seed
@@ -53,6 +53,7 @@ app.add_middleware(
 
 app.include_router(auth.router)
 app.include_router(encounters.router)
+app.include_router(audit.router)
 
 
 @app.get("/health")
