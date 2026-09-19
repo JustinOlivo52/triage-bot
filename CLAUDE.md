@@ -174,10 +174,17 @@ the decision function pure and put the LLM call in a thin wrapper around it.
   and `Encounter.age_at_encounter` carries the age reported at each visit.
   Matching is name-only, a known limitation, not a further gap to close
   casually — see `backend/services/triage_service.py`'s module docstring.
-- Not yet started: real identity resolution beyond name matching,
-  database-level append-only enforcement on `audit_logs` (currently
-  application-layer only), deploy (needs a hosting decision for two
-  services + a database — see `DEPLOY.md`).
+- Database-level append-only enforcement on `audit_logs` — done. `BEFORE
+  UPDATE`/`BEFORE DELETE` triggers, SQLite and Postgres both, registered via
+  SQLAlchemy DDL events (for `Base.metadata.create_all()` / tests) and
+  duplicated in an Alembic migration (for a real deployment) — the two
+  registration paths don't share code, so if one changes, update the other.
+  Verified against a real migrated SQLite database, not just the test
+  fixture. Any dialect besides those two silently gets application-layer
+  enforcement only (no-op in the migration, not a failure).
+- Not yet started: real identity resolution beyond name matching, deploy
+  (needs a hosting decision for two services + a database — see
+  `DEPLOY.md`).
 
 ## For a fresh Claude Code session picking this up
 

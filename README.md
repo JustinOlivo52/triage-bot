@@ -143,7 +143,9 @@ A role hierarchy ("physician can do what a nurse can") is expressed by listing e
 
 ## Audit Log
 
-Every mutating action writes one append-only row: `actor_user_id`, `action`, `resource_type`, `resource_id`, `timestamp`, JSON `metadata`. Covered today: login, account creation, patient check-in, triage run (and triage system-error), escalation resolution, and the end-of-shift reset. Append-only is enforced at the application layer — `GET /audit` (admin-only) is the only audit route; there is no update or delete endpoint, and a reset never deletes audit rows, including the row recording the reset itself. (A future hardening pass could add a database-level rule blocking `UPDATE`/`DELETE` on the table too — noted as a follow-up, not done here, since SQLite in the test suite has no equivalent mechanism to verify it against.)
+Every mutating action writes one append-only row: `actor_user_id`, `action`, `resource_type`, `resource_id`, `timestamp`, JSON `metadata`. Covered today: login, account creation, patient check-in, triage run (and triage system-error), escalation resolution, and the end-of-shift reset. `GET /audit` (admin-only) is the only audit route — there is no update or delete endpoint, and a reset never deletes audit rows, including the row recording the reset itself.
+
+Enforced at two layers, not just the application one: `audit_logs` also carries a `BEFORE UPDATE`/`BEFORE DELETE` database trigger (SQLite and Postgres both — see `backend/models/audit_log.py`) that aborts the statement outright, so even a raw SQL `UPDATE` or a bug in some future code path can't rewrite history. Registered via SQLAlchemy DDL events for `Base.metadata.create_all()` (the test suite) and duplicated in an Alembic migration for a real `alembic upgrade head` deployment, so both paths actually get it.
 
 ---
 
@@ -294,7 +296,7 @@ pip install -r requirements-dev.txt -r backend/requirements.txt
 pytest
 ```
 
-206 tests, well under a second for the deterministic core and well under a minute total, with **no API key and no network** — every LLM call any test would otherwise need is stubbed at the same boundary `agents/triage_agent.py` exposes for it.
+209 tests, well under a second for the deterministic core and well under a minute total, with **no API key and no network** — every LLM call any test would otherwise need is stubbed at the same boundary `agents/triage_agent.py` exposes for it.
 
 Two CI jobs mirror that same split (`.github/workflows/tests.yml`):
 - **pure-logic** — `agents/assessment.py`, `memory/`, and `rag/`'s lexical path, installed with a deliberately narrow dependency list (no LangChain, no FastAPI). If these tests ever start needing more than that, one of the "pure" modules has leaked a dependency it shouldn't have, and the job fails on purpose.
@@ -317,7 +319,7 @@ Coverage includes: threshold tiering and boundary conditions, the extraction-to-
 - **Cost-aware escalation** — only `IMMEDIATE` patients trigger a physician-summary LLM call
 - **Honest failure modes** — a pipeline failure is surfaced as a system error, never disguised as a clinical alert or a fabricated ESI score
 - **Retrieval degrades in steps, not all-or-nothing** — semantic search (Voyage key) → lexical search (no key) → ungrounded reasoning (no index), never a crash
-- **Zero-dependency clinical-rules testing** — 206 tests, no API key or network, split across two CI jobs so the pure logic's dependency guarantee is actually enforced, not just claimed
+- **Zero-dependency clinical-rules testing** — 209 tests, no API key or network, split across two CI jobs so the pure logic's dependency guarantee is actually enforced, not just claimed
 - **Eval harness, ready to run** — `evals/` measures ESI agreement against clinician-labeled vignettes (exact-match, within-one, under/over-triage rate); the harness itself is tested, the vignette set is drafted and awaiting clinical review before any number from it is a real claim
 
 ---
@@ -354,12 +356,16 @@ Coverage includes: threshold tiering and boundary conditions, the extraction-to-
 - [x] `Patient.birth_date` is set once, at the first visit, and never overwritten; `Encounter.age_at_encounter` carries what was reported at each specific visit
 - [x] `GET /encounters/{id}/prior-visits` now queries the FK directly instead of a name-matching join — simpler and actually correct rather than a heuristic
 
+**Done (audit_logs enforced append-only at the database level, not just the application layer)**
+- [x] `BEFORE UPDATE`/`BEFORE DELETE` triggers on `audit_logs`, both SQLite and Postgres, aborting the statement outright rather than relying only on "no update/delete route exists"
+- [x] Registered two ways so both paths get it: SQLAlchemy DDL events on `after_create` (fires for `Base.metadata.create_all()`, i.e. the test suite) and an Alembic migration with the same SQL (fires for a real `alembic upgrade head` deployment)
+- [x] Verified against a real migrated SQLite database, not just the test fixture path — a raw `UPDATE`/`DELETE` against `audit_logs` is rejected with the trigger's own error message
+
 **Next**
 - [ ] Clinical review of `evals/vignettes.json` (Justin), then a real run against `claude-opus-5` — would turn the model split in `config.py` from a reasoned default into a measured one
 - [ ] Grow the vignette set toward the original 50-100 target once the starter batch is reviewed
 - [ ] Clinical review of the pediatric vital thresholds in `config.py`/`data/esi_reference.md` — same gate as the eval vignettes, see the note in the reference doc
 - [ ] Real identity resolution for returning patients (currently name-only matching — see Known Limitations)
-- [ ] Database-level append-only enforcement on `audit_logs` (currently application-layer only)
 - [ ] Deploy — needs a hosting decision for two services + a database, not just Streamlit Community Cloud (see `DEPLOY.md`)
 
 ---
