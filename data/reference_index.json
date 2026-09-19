@@ -1,11 +1,11 @@
 {
   "source": "esi_reference.md",
-  "chunk_count": 17,
+  "chunk_count": 20,
   "dimensions": 0,
   "mode": "lexical",
   "chunks": [
     {
-      "text": "Emergency Severity Index \u2014 Condensed Triage Reference\n\n> **Status: DRAFT \u2014 pending clinical review.**\n> This document was drafted as a condensed, self-authored summary of publicly\n> described ESI v4 concepts. It is **not** a reproduction of the ESI\n> Implementation Handbook or any other copyrighted material, and it is not a\n> substitute for it. It exists to give the retrieval layer something accurate\n> and redistributable to ground against.\n>\n> **Sources this summarises:** the Emergency Severity Index (ESI) v4 algorithm\n> as published by the Agency for Healthcare Research and Quality (AHRQ) and\n> maintained by the Emergency Nurses Association (ENA). Consult the current\n> official handbook for authoritative criteria.\n>\n> All thresholds in this document must match `config.py`. If they diverge, the\n> code is the source of truth and this document is wrong.\n\n---",
+      "text": "Emergency Severity Index \u2014 Condensed Triage Reference\n\n> **Reviewed.** This document is a condensed, self-authored summary of publicly\n> described ESI v4 concepts, reviewed for clinical accuracy. It is **not** a\n> reproduction of the ESI Implementation Handbook or any other copyrighted\n> material, and it is not a substitute for it. It exists to give the\n> retrieval layer something accurate and redistributable to ground against.\n>\n> **Sources this summarises:** the Emergency Severity Index (ESI) v4 algorithm\n> as published by the Agency for Healthcare Research and Quality (AHRQ) and\n> maintained by the Emergency Nurses Association (ENA). Consult the current\n> official handbook for authoritative criteria.\n>\n> All thresholds in this document must match `config.py`. If they diverge, the\n> code is the source of truth and this document is wrong.\n>\n> **Exception:** the pediatric vital-sign thresholds in \"Vital Sign Danger\n> Zones\" below are a later addition and are still draft, not reviewed \u2014\n> see the note in that section.\n\n---",
       "source": "esi_reference.md",
       "section": "Emergency Severity Index \u2014 Condensed Triage Reference",
       "embedding": []
@@ -83,9 +83,27 @@
       "embedding": []
     },
     {
-      "text": "Emergency Severity Index \u2014 Condensed Triage Reference > Vital Sign Danger Zones\n\nThese thresholds are adult values and are duplicated in `config.py`, which is\nthe operative source. They are applied in two tiers.\n\n**Concerning** \u2014 outside normal range; a reason to look more closely, not by\nitself a statement that the patient cannot wait:\nheart rate above 100 or below 60; respiratory rate above 20 or below 12;\noxygen saturation below 94%; temperature above 38.5 \u00b0C or below 36.0 \u00b0C;\nsystolic pressure above 180 or below 100; diastolic pressure above 110.\n\n**Critical** \u2014 derangement warranting immediate physician attention regardless\nof the assigned acuity level:\nheart rate above 130 or below 45; respiratory rate above 30 or below 8;\noxygen saturation below 90%; temperature above 40.0 \u00b0C or below 35.0 \u00b0C;\nsystolic pressure above 220 or below 90; diastolic pressure above 120.\n\n**These ranges do not apply to children.** Normal paediatric heart and\nrespiratory rates are substantially higher and vary by age; a well three-year-old\nsits near a heart rate of 110 and a respiratory rate of 26, both of which read\nas abnormal against adult values. Age-banded thresholds are a known gap in the\ncurrent implementation.\n\n---",
+      "text": "Emergency Severity Index \u2014 Condensed Triage Reference > Vital Sign Danger Zones\n\nTwo age bands, each duplicated in `config.py` (`CRITICAL_VITALS_ADULT` /\n`CONCERNING_VITALS_ADULT` and the `_PEDIATRIC` equivalents), which is the\noperative source. Each is applied in two tiers.",
       "source": "esi_reference.md",
       "section": "Emergency Severity Index \u2014 Condensed Triage Reference > Vital Sign Danger Zones",
+      "embedding": []
+    },
+    {
+      "text": "Emergency Severity Index \u2014 Condensed Triage Reference > Vital Sign Danger Zones > Adult (also applied to geriatric patients \u2014 see Age as a Risk Modifier below)\n\n**Concerning** \u2014 outside normal range; a reason to look more closely, not by\nitself a statement that the patient cannot wait:\nheart rate above 100 or below 60; respiratory rate above 20 or below 12;\noxygen saturation below 94%; temperature above 38.5 \u00b0C or below 36.0 \u00b0C;\nsystolic pressure above 180 or below 100; diastolic pressure above 110.\n\n**Critical** \u2014 derangement warranting immediate physician attention regardless\nof the assigned acuity level:\nheart rate above 130 or below 45; respiratory rate above 30 or below 8;\noxygen saturation below 90%; temperature above 40.0 \u00b0C or below 35.0 \u00b0C;\nsystolic pressure above 220 or below 90; diastolic pressure above 120.",
+      "source": "esi_reference.md",
+      "section": "Emergency Severity Index \u2014 Condensed Triage Reference > Vital Sign Danger Zones > Adult (also applied to geriatric patients \u2014 see Age as a Risk Modifier below)",
+      "embedding": []
+    },
+    {
+      "text": "Emergency Severity Index \u2014 Condensed Triage Reference > Vital Sign Danger Zones > Pediatric (age 5 and under)\n\n> **Draft \u2014 pending clinical review.** Normal paediatric heart and\n> respiratory rates are substantially higher, and normal blood pressure\n> lower, than adult values; a well three-year-old sits near a heart rate of\n> 110 and a respiratory rate of 26, both of which previously read as\n> abnormal against adult-only thresholds. The ranges below fix that, but\n> unlike the rest of this document they have **not yet been checked by\n> Justin** \u2014 they were drafted from general pediatric vital-sign norms for\n> this age band, the same way the seed cohort and eval vignettes were\n> drafted before his review. Treat these specific numbers as unverified\n> until this note is removed.\n\n**Concerning:**\nheart rate above 140 or below 80; respiratory rate above 30 or below 20;\noxygen saturation below 95%; temperature above 38.5 \u00b0C or below 36.0 \u00b0C;\nsystolic pressure above 120 or below 80; diastolic pressure above 80.\n\n**Critical:**\nheart rate above 180 or below 70; respiratory rate above 50 or below 15;\noxygen saturation below 90%; temperature above 40.0 \u00b0C or below 35.0 \u00b0C;\nsystolic pressure above 140 or below 70; diastolic pressure above 90.",
+      "source": "esi_reference.md",
+      "section": "Emergency Severity Index \u2014 Condensed Triage Reference > Vital Sign Danger Zones > Pediatric (age 5 and under)",
+      "embedding": []
+    },
+    {
+      "text": "Emergency Severity Index \u2014 Condensed Triage Reference > Vital Sign Danger Zones > Pediatric (age 5 and under)\n\nFever and hypoxia/hypothermia cutoffs are kept the same as adult \u2014 those\ndefinitions don't meaningfully shift for this age band. Heart rate,\nrespiratory rate, and blood pressure are lower, reflecting normal pediatric\nphysiology.\n\n---",
+      "source": "esi_reference.md",
+      "section": "Emergency Severity Index \u2014 Condensed Triage Reference > Vital Sign Danger Zones > Pediatric (age 5 and under)",
       "embedding": []
     },
     {
@@ -95,7 +113,7 @@
       "embedding": []
     },
     {
-      "text": "Emergency Severity Index \u2014 Condensed Triage Reference > Age as a Risk Modifier\n\nAge alone does not determine acuity. Age combined with any other abnormal\nfinding raises it, because both extremes of the age range blunt the usual\nwarning signs.\n\n**Paediatric patients (roughly 5 and under)** cannot reliably report symptoms,\ncompensate well until they decompensate abruptly, and have age-specific normal\nranges that adult thresholds misread.\n\n**Geriatric patients (roughly 65 and over)** frequently present atypically.\nMyocardial infarction without chest pain, infection without fever, and acute\nabdomen with minimal tenderness are all common. Baseline medication can blunt\nthe tachycardic response that would otherwise signal instability.\n\n---",
+      "text": "Emergency Severity Index \u2014 Condensed Triage Reference > Age as a Risk Modifier\n\nAge alone does not determine acuity. Age combined with any other abnormal\nfinding raises it, because both extremes of the age range blunt the usual\nwarning signs.\n\n**Paediatric patients (roughly 5 and under)** cannot reliably report symptoms\nand compensate well until they decompensate abruptly \u2014 true regardless of\nwhich vital-sign thresholds are applied, which is why age remains a risk\nmodifier here even though age-banded vital thresholds (above) now exist.\n\n**Geriatric patients (roughly 65 and over)** frequently present atypically.\nMyocardial infarction without chest pain, infection without fever, and acute\nabdomen with minimal tenderness are all common. Baseline medication can blunt\nthe tachycardic response that would otherwise signal instability.\n\n---",
       "source": "esi_reference.md",
       "section": "Emergency Severity Index \u2014 Condensed Triage Reference > Age as a Risk Modifier",
       "embedding": []

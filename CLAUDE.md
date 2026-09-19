@@ -11,14 +11,23 @@ hard way (see "Bugs found running against a real key" below).
 
 ## Where things stand
 
-All core work is done and tested. **The only remaining step is deployment**,
-which needs Justin's hosting account — see `DEPLOY.md` for the exact path.
-Branch: `claude/codebase-analysis-improvements-mpz9oo` (12 commits ahead of
-the original `main`). Read `git log --oneline` for the full sequence; each
-commit message explains *why*, not just what.
+This file is stale on specifics below this point — it still describes the
+V1, Streamlit-only shape of the project. **Treat README.md as current**: it
+has the real architecture (FastAPI backend + Streamlit thin client), the
+FHIR mapping table, auth/roles, and the up-to-date roadmap. This file's
+rationale/history sections below (Architecture, the two production bugs,
+model choice, RAG rewrite) are still accurate for *why* those V1 decisions
+were made; just don't trust this section or the test count for current state.
 
-122 tests pass with **no API key and no network** (`pytest`). If a change
-ever makes that untrue, something has leaked a dependency it shouldn't have.
+V1 and V2 (Phases 1-5) are both merged to `main` via PR #1; the eval harness
+and age-banded pediatric thresholds landed after that via PR #2 and a
+follow-up. Deployment is still the open item, gated on Justin's hosting
+decision for two services + a database — see `DEPLOY.md`.
+
+204+ tests pass with **no API key and no network** (`pytest`) — check
+README.md's Tests section for the current real count. If a change ever
+makes the zero-dependency claim untrue for the pure-logic subset, something
+has leaked a dependency it shouldn't have.
 
 ## Architecture
 
@@ -144,21 +153,37 @@ including the exact false-positive complaints that motivated the symptom
 extraction rewrite. New clinical logic should follow the same pattern: keep
 the decision function pure and put the LLM call in a thin wrapper around it.
 
-## Known gaps (not yet started)
+## Known gaps
 
-- Eval harness (clinician-labeled vignettes, measured agreement rate) — would
-  turn the model choice above from reasoned into measured.
-- Nurse override / disposition workflow.
-- Audit log of triage decisions.
-- Age-banded vital thresholds (current ones are adult-only).
+- Eval harness — **built** (`evals/`), but the vignette set is drafted, not
+  yet clinician-reviewed. See `evals/README.md` for the review checklist and
+  why no number from it counts yet.
+- Nurse override / disposition workflow — done (`backend/api/routes/
+  encounters.py`'s resolve endpoint, physician+ role).
+- Audit log of triage decisions — done (`backend/models/audit_log.py`,
+  append-only, admin-read `GET /audit`).
+- Age-banded vital thresholds — pediatric (age ≤5) now has its own
+  `CRITICAL_VITALS_PEDIATRIC`/`CONCERNING_VITALS_PEDIATRIC` tables in
+  `config.py`, drafted from general pediatric norms and **pending clinical
+  review** (same gate as the eval vignettes — see the note in
+  `data/esi_reference.md`'s Vital Sign Danger Zones section). Geriatric
+  intentionally still uses adult thresholds; see config.py's comment for why.
+- Not yet started: consolidating a returning patient's visits under one FHIR
+  `Patient` across `Encounter`s (currently a fresh `Patient` row per visit —
+  see `backend/services/triage_service.py`), database-level append-only
+  enforcement on `audit_logs` (currently application-layer only), deploy
+  (needs a hosting decision for two services + a database — see `DEPLOY.md`).
 
 ## For a fresh Claude Code session picking this up
 
-1. `git log --oneline` — read every commit message in order. They tell the
+1. **Read `README.md` first** — it's the current, accurate description of
+   the system. This file's history sections are still worth reading for
+   *why*, but its "current state" claims are stale (see the note above).
+2. `git log --oneline` — read every commit message in order. They tell the
    real story better than this file summarizes it.
-2. `pytest` — should be 122 passed, instantly, no key needed. If not, stop
-   and figure out why before doing anything else.
-3. `DEPLOY.md` — current deploy status and exact next steps.
+3. `pytest` — should pass, instantly, no key needed (see README.md's Tests
+   section for the current count). If not, stop and figure out why first.
+4. `DEPLOY.md` — current deploy status and exact next steps.
 4. Don't re-litigate the linear-pipeline decision or the `json_schema`
    structured-output choice without re-reading why they exist above — both
    were arrived at after a wrong version shipped first.

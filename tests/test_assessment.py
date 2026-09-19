@@ -37,9 +37,22 @@ NORMAL_VITALS = dict(
     respiratory_rate=16, spo2=98.0, temperature_c=36.8,
 )
 
+# A resting HR/RR/BP that's normal for a toddler reads as abnormal under
+# adult thresholds and vice versa — that's the whole point of age-banding.
+# Pediatric-specific tests need their own "normal" baseline rather than
+# overriding one field on the adult baseline above.
+NORMAL_PEDIATRIC_VITALS = dict(
+    heart_rate=110, systolic_bp=95, diastolic_bp=60,
+    respiratory_rate=26, spo2=98.0, temperature_c=37.0,
+)
+
 
 def make_vitals(**overrides) -> VitalSigns:
     return VitalSigns(**{**NORMAL_VITALS, **overrides})
+
+
+def make_pediatric_vitals(**overrides) -> VitalSigns:
+    return VitalSigns(**{**NORMAL_PEDIATRIC_VITALS, **overrides})
 
 
 def make_patient(complaint="routine follow up", age=40, **vital_overrides) -> Patient:
@@ -60,9 +73,10 @@ def finding(severity=CONCERNING, category=FindingCategory.VITAL, detail="x"):
 # ─── Vital Thresholds ─────────────────────────────────────────────────────────
 
 class TestVitalThresholds:
+    """Adult age band — the default for everything in this class."""
 
     def test_normal_vitals_produce_no_findings(self):
-        assert assess_vitals(make_vitals()) == []
+        assert assess_vitals(make_vitals(), "adult") == []
 
     @pytest.mark.parametrize("field,value,expected", [
         # Heart rate
@@ -92,7 +106,7 @@ class TestVitalThresholds:
         ("diastolic_bp", 121, CRITICAL),
     ])
     def test_threshold_tiers(self, field, value, expected):
-        findings = assess_vitals(make_vitals(**{field: value}))
+        findings = assess_vitals(make_vitals(**{field: value}), "adult")
         if expected is None:
             assert findings == []
         else:
@@ -102,27 +116,81 @@ class TestVitalThresholds:
 
     def test_boundary_values_are_not_findings(self):
         """Thresholds are exclusive: exactly at the bound is still in range."""
-        assert assess_vitals(make_vitals(heart_rate=100)) == []
-        assert assess_vitals(make_vitals(heart_rate=60)) == []
-        assert assess_vitals(make_vitals(spo2=94.0)) == []
-        assert assess_vitals(make_vitals(temperature_c=38.5)) == []
+        assert assess_vitals(make_vitals(heart_rate=100), "adult") == []
+        assert assess_vitals(make_vitals(heart_rate=60), "adult") == []
+        assert assess_vitals(make_vitals(spo2=94.0), "adult") == []
+        assert assess_vitals(make_vitals(temperature_c=38.5), "adult") == []
 
     def test_one_finding_per_vital_not_two(self):
         """A critically high value must not also report as concerning."""
-        findings = assess_vitals(make_vitals(heart_rate=165))
+        findings = assess_vitals(make_vitals(heart_rate=165), "adult")
         assert len(findings) == 1
         assert findings[0].severity is CRITICAL
 
     def test_dangerous_diastolic_is_caught_behind_normal_systolic(self):
         """Regression: 138/124 previously displayed as entirely normal."""
-        findings = assess_vitals(make_vitals(systolic_bp=138, diastolic_bp=124))
+        findings = assess_vitals(make_vitals(systolic_bp=138, diastolic_bp=124), "adult")
         assert [f.severity for f in findings] == [CRITICAL]
 
     def test_severity_map_matches_findings(self):
         """The UI's highlighting must agree with the clinical rules."""
         vitals = make_vitals(heart_rate=165, spo2=92.0)
-        severities = vital_severity_map(vitals)
+        severities = vital_severity_map(vitals, "adult")
         assert severities == {"heart_rate": CRITICAL, "spo2": CONCERNING}
+
+
+class TestPediatricVitalThresholds:
+    """
+    Age-banded thresholds for age <= 5 (config.py's CRITICAL_VITALS_PEDIATRIC /
+    CONCERNING_VITALS_PEDIATRIC — drafted, pending clinical review, see the
+    note in config.py and evals/README.md's review pattern).
+    """
+
+    def test_the_documented_bug_is_fixed(self):
+        """
+        The exact case from CLAUDE.md / README's Known Limitations history:
+        a well 3-year-old at HR 110 / RR 26 previously registered as both
+        tachycardic and tachypneic against adult-only thresholds.
+        """
+        assert assess_vitals(make_pediatric_vitals(), "pediatric") == []
+
+    def test_the_same_values_still_flag_for_an_adult(self):
+        """Confirms this is genuinely age-banded, not just a raised ceiling
+        that would also silently stop flagging adults: the same HR/RR that
+        are normal for a toddler read as concerning for an adult."""
+        vitals = make_vitals(heart_rate=110, respiratory_rate=26)
+        findings = assess_vitals(vitals, "adult")
+        assert len(findings) == 2
+        assert {f.severity for f in findings} == {CONCERNING}
+
+    def test_a_normal_pediatric_systolic_is_not_hypotensive(self):
+        """A pediatric SBP of 95 is normal, not the adult 'borderline
+        hypotension' (<100) it would wrongly register as under adult ranges."""
+        assert assess_vitals(make_pediatric_vitals(), "pediatric") == []
+
+    def test_pediatric_critical_tachycardia_still_flags(self):
+        findings = assess_vitals(make_pediatric_vitals(heart_rate=190), "pediatric")
+        assert len(findings) == 1
+        assert findings[0].severity is CRITICAL
+
+    def test_pediatric_hypotension_flags_at_a_lower_threshold_than_adult(self):
+        """SBP 85: below the adult critical floor (90) but still normal for
+        the pediatric band (concerning floor 80). Checked as a specific
+        finding, not the whole list, since HR/RR normal-for-pediatric values
+        read as abnormal under adult thresholds regardless of SBP."""
+        vitals = make_pediatric_vitals(systolic_bp=85)
+        adult_findings = assess_vitals(vitals, "adult")
+        pediatric_findings = assess_vitals(vitals, "pediatric")
+        assert any(f.severity is CRITICAL and "SBP" in f.detail for f in adult_findings)
+        assert not any("SBP" in f.detail for f in pediatric_findings)
+
+
+class TestGeriatricVitalThresholds:
+    """Geriatric intentionally reuses the adult tables — see config.py."""
+
+    def test_geriatric_uses_adult_thresholds(self):
+        vitals = make_vitals(heart_rate=110)
+        assert assess_vitals(vitals, "geriatric") == assess_vitals(vitals, "adult")
 
 
 # ─── Symptom Extraction ───────────────────────────────────────────────────────
@@ -273,7 +341,7 @@ class TestDeterministicPath:
     def _escalate(self, patient, extraction, esi):
         findings = combine_findings(
             patient,
-            assess_vitals(patient.vitals),
+            assess_vitals(patient.vitals, patient.age_group),
             findings_from_extraction(extraction),
         )
         return derive_escalation(esi, findings)[0]
