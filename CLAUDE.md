@@ -168,11 +168,16 @@ the decision function pure and put the LLM call in a thin wrapper around it.
   review** (same gate as the eval vignettes — see the note in
   `data/esi_reference.md`'s Vital Sign Danger Zones section). Geriatric
   intentionally still uses adult thresholds; see config.py's comment for why.
-- Not yet started: consolidating a returning patient's visits under one FHIR
-  `Patient` across `Encounter`s (currently a fresh `Patient` row per visit —
-  see `backend/services/triage_service.py`), database-level append-only
-  enforcement on `audit_logs` (currently application-layer only), deploy
-  (needs a hosting decision for two services + a database — see `DEPLOY.md`).
+- Returning-patient consolidation — done. A returning patient (matched by
+  name) reuses their existing `Patient` row and `patient_identifier` across
+  visits instead of getting a new one each time; `birth_date` is set once
+  and `Encounter.age_at_encounter` carries the age reported at each visit.
+  Matching is name-only, a known limitation, not a further gap to close
+  casually — see `backend/services/triage_service.py`'s module docstring.
+- Not yet started: real identity resolution beyond name matching,
+  database-level append-only enforcement on `audit_logs` (currently
+  application-layer only), deploy (needs a hosting decision for two
+  services + a database — see `DEPLOY.md`).
 
 ## For a fresh Claude Code session picking this up
 

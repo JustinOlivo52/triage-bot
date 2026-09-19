@@ -294,7 +294,7 @@ pip install -r requirements-dev.txt -r backend/requirements.txt
 pytest
 ```
 
-204 tests, well under a second for the deterministic core and well under a minute total, with **no API key and no network** — every LLM call any test would otherwise need is stubbed at the same boundary `agents/triage_agent.py` exposes for it.
+206 tests, well under a second for the deterministic core and well under a minute total, with **no API key and no network** — every LLM call any test would otherwise need is stubbed at the same boundary `agents/triage_agent.py` exposes for it.
 
 Two CI jobs mirror that same split (`.github/workflows/tests.yml`):
 - **pure-logic** — `agents/assessment.py`, `memory/`, and `rag/`'s lexical path, installed with a deliberately narrow dependency list (no LangChain, no FastAPI). If these tests ever start needing more than that, one of the "pure" modules has leaked a dependency it shouldn't have, and the job fails on purpose.
@@ -317,7 +317,7 @@ Coverage includes: threshold tiering and boundary conditions, the extraction-to-
 - **Cost-aware escalation** — only `IMMEDIATE` patients trigger a physician-summary LLM call
 - **Honest failure modes** — a pipeline failure is surfaced as a system error, never disguised as a clinical alert or a fabricated ESI score
 - **Retrieval degrades in steps, not all-or-nothing** — semantic search (Voyage key) → lexical search (no key) → ungrounded reasoning (no index), never a crash
-- **Zero-dependency clinical-rules testing** — 204 tests, no API key or network, split across two CI jobs so the pure logic's dependency guarantee is actually enforced, not just claimed
+- **Zero-dependency clinical-rules testing** — 206 tests, no API key or network, split across two CI jobs so the pure logic's dependency guarantee is actually enforced, not just claimed
 - **Eval harness, ready to run** — `evals/` measures ESI agreement against clinician-labeled vignettes (exact-match, within-one, under/over-triage rate); the harness itself is tested, the vignette set is drafted and awaiting clinical review before any number from it is a real claim
 
 ---
@@ -349,11 +349,16 @@ Coverage includes: threshold tiering and boundary conditions, the extraction-to-
 - [x] Fixes the exact documented bug: a well 3-year-old at HR 110 / RR 26 no longer registers as tachycardic/tachypneic
 - [x] Geriatric intentionally keeps adult thresholds — the real concern there (blunted response can mask severity) is handled by `assess_age_risk()` amplifying whatever finding *is* present, not by moving the numbers
 
+**Done (returning patients consolidated onto one FHIR `Patient`)**
+- [x] A returning patient (matched by name) reuses their existing `Patient` row and `patient_identifier` instead of getting a new chart number every visit — one person, one FHIR `Patient`, multiple `Encounter`s
+- [x] `Patient.birth_date` is set once, at the first visit, and never overwritten; `Encounter.age_at_encounter` carries what was reported at each specific visit
+- [x] `GET /encounters/{id}/prior-visits` now queries the FK directly instead of a name-matching join — simpler and actually correct rather than a heuristic
+
 **Next**
 - [ ] Clinical review of `evals/vignettes.json` (Justin), then a real run against `claude-opus-5` — would turn the model split in `config.py` from a reasoned default into a measured one
 - [ ] Grow the vignette set toward the original 50-100 target once the starter batch is reviewed
 - [ ] Clinical review of the pediatric vital thresholds in `config.py`/`data/esi_reference.md` — same gate as the eval vignettes, see the note in the reference doc
-- [ ] Consolidate a returning patient's visits under one FHIR `Patient` with multiple `Encounter`s, rather than a fresh `Patient` row per visit
+- [ ] Real identity resolution for returning patients (currently name-only matching — see Known Limitations)
 - [ ] Database-level append-only enforcement on `audit_logs` (currently application-layer only)
 - [ ] Deploy — needs a hosting decision for two services + a database, not just Streamlit Community Cloud (see `DEPLOY.md`)
 
@@ -364,8 +369,8 @@ Coverage includes: threshold tiering and boundary conditions, the extraction-to-
 - **Pediatric vital thresholds are drafted, not clinically reviewed yet.** They fix the previous adult-only bug (see below) but the specific numbers in `config.py`'s `CRITICAL_VITALS_PEDIATRIC`/`CONCERNING_VITALS_PEDIATRIC` need Justin's sign-off, same as `data/esi_reference.md`'s pediatric section and `evals/vignettes.json`.
 - **No accuracy measurement yet.** There is no eval set, so the system's agreement with expert ESI assignment is currently unknown. Model choice per role is a reasoned default, not a measured one.
 - **The fallback symptom scan is naive.** If the triage call fails, symptom detection degrades to a substring scan, which cannot handle negation — deliberate (a few false positives beat losing detection entirely on an already-degraded path), but findings on a system-error card should be read with that in mind.
-- **`patient_identifier` generation isn't concurrency-safe.** It's a count-and-increment, not a DB sequence — fine for demo traffic, a real race under concurrent check-ins.
-- **A `Patient` row is created fresh per visit**, not reused across a returning patient's encounters — see the V2 Roadmap above.
+- **`patient_identifier` generation isn't concurrency-safe.** It's a count-and-increment, not a DB sequence — fine for demo traffic, a real race under concurrent check-ins, and only applies the first time a given name is seen (a returning patient reuses their existing identifier, no new number generated).
+- **Returning-patient matching is name-only.** Two different people who happen to share a name would incorrectly consolidate onto one `Patient` record; the same person spelled two different ways would incorrectly get two. Real identity resolution (DOB + name, or a patient-supplied identifier) would fix both, and isn't done here.
 - **FHIR-shaped, not FHIR-certified.** No terminology binding, no `$validate`, no complete resource set — see the Data Model section above for exactly what's simplified and why.
 
 ---

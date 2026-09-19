@@ -153,6 +153,53 @@ class TestCheckIn:
         assert calls[0].is_returning is False
         assert calls[1].is_returning is True
 
+    def test_returning_patient_reuses_the_same_patient_record(self, client, db_session, monkeypatch):
+        """One Patient row, one patient_identifier, across visits — not a
+        fresh chart number every time the same person checks in."""
+        make_user(db_session, "nurse6", UserRole.NURSE)
+        headers = auth_headers(client, "nurse6")
+        _stub_run_triage(monkeypatch)
+
+        r1 = client.post("/encounters/check-in", headers=headers, json=_check_in_payload(name="Consolidated Patient"))
+        r2 = client.post("/encounters/check-in", headers=headers, json=_check_in_payload(name="Consolidated Patient"))
+
+        id1 = r1.json()["card"]["patient"]["patient_id"]
+        id2 = r2.json()["card"]["patient"]["patient_id"]
+        assert id1 == id2
+        assert r1.json()["encounter_id"] != r2.json()["encounter_id"]
+
+        assert db_session.query(PatientRow).count() == 1
+        assert db_session.query(Encounter).count() == 2
+
+    def test_returning_patient_keeps_original_birth_date_but_new_age_at_encounter(
+        self, client, db_session, monkeypatch
+    ):
+        """A person's birth date doesn't change between visits, even if the
+        age they report does (a birthday, or a typo corrected next time)."""
+        make_user(db_session, "nurse7", UserRole.NURSE)
+        headers = auth_headers(client, "nurse7")
+        _stub_run_triage(monkeypatch)
+
+        client.post("/encounters/check-in", headers=headers, json=_check_in_payload(name="Birthday Patient"))
+        patient_row = db_session.query(PatientRow).filter(PatientRow.full_name == "Birthday Patient").one()
+        original_birth_date = patient_row.birth_date
+
+        older_payload = _check_in_payload(name="Birthday Patient")
+        older_payload["age"] = 41
+        client.post("/encounters/check-in", headers=headers, json=older_payload)
+
+        db_session.refresh(patient_row)
+        assert patient_row.birth_date == original_birth_date
+        assert db_session.query(PatientRow).count() == 1
+
+        encounters = (
+            db_session.query(Encounter)
+            .filter(Encounter.patient_id == patient_row.id)
+            .order_by(Encounter.period_start)
+            .all()
+        )
+        assert [e.age_at_encounter for e in encounters] == [40, 41]
+
     def test_other_staff_roles_can_also_check_in(self, client, db_session, monkeypatch):
         """Check-in isn't a privileged action — every staff role can do it."""
         make_user(db_session, "physician1", UserRole.PHYSICIAN)
