@@ -6,20 +6,26 @@ This is the one place that knows both languages: the pipeline's native
 `agents/triage_agent.py` is called completely unchanged — it has no idea FHIR
 exists, and it shouldn't need to.
 
-Simplification stated once, here: every check-in creates a fresh `Patient`
-row and a fresh `patient_identifier` (PT-0001, PT-0002, ...), the same way
-the V1 file store did — it does not merge a returning patient's visits onto
-one Patient row across encounters. `is_returning` is still computed (matched
-by name, case-insensitive) and carried onto the domain Patient for display,
-same as V1. Consolidating one person's repeat visits under a single FHIR
-Patient with multiple Encounters is a reasonable real-EHR refinement, but
-it's not required for this vertical slice and adds real complexity (identity
-matching, merge conflicts) that belongs in its own pass, not this one.
+A returning patient (matched by full name, case-insensitive) reuses their
+existing `Patient` row and `patient_identifier` rather than getting a new
+one each visit — one person, one chart number, multiple `Encounter`s, the
+same way a real EHR works. `Patient.birth_date` is estimated once, at the
+first visit, and never overwritten by a later visit's reported age — a
+person's actual birth date doesn't change. `Encounter.age_at_encounter`
+carries the age reported *at that specific visit* instead, which is exactly
+why that field exists separately from `Patient.birth_date` (see
+backend/models/encounter.py's docstring — it anticipated this before it was
+built). Identity matching is name-only, no fuzzier than that: two different
+people who happen to share a name would incorrectly merge, and the same
+person spelled two different ways would incorrectly stay separate. Real
+identity resolution (DOB + name, or a patient-supplied identifier) is a
+further refinement, not done here.
 
-`patient_identifier` generation (count existing rows + 1) is not
-concurrency-safe — two simultaneous check-ins could race for the same
-number. Acceptable for a portfolio project's demo traffic; a production
-system would use a DB sequence or a unique-constraint-and-retry loop.
+`patient_identifier` generation for a genuinely new patient (count existing
+rows + 1) is not concurrency-safe — two simultaneous first-time check-ins
+could race for the same number. Acceptable for a portfolio project's demo
+traffic; a production system would use a DB sequence or a
+unique-constraint-and-retry loop.
 
 `Encounter.card_json` (see backend/models/encounter.py) is what every read
 below actually returns — the FHIR rows are written for anyone querying the
@@ -66,12 +72,14 @@ def _next_patient_identifier(db: Session) -> str:
     return f"{PATIENT_ID_PREFIX}-{count + 1:04d}"
 
 
-def _is_returning(db: Session, full_name: str) -> bool:
+def _find_existing_patient(db: Session, full_name: str) -> PatientRow | None:
+    """Match by name, case-insensitive — the only identity signal check-in
+    actually collects. See the module docstring for what this does and
+    doesn't handle correctly."""
     return (
         db.query(PatientRow)
         .filter(func.lower(PatientRow.full_name) == full_name.strip().lower())
         .first()
-        is not None
     )
 
 
@@ -109,16 +117,20 @@ def check_in_and_triage(db: Session, payload: CheckInRequest, actor: User) -> Ch
     outcome — see risk_assessment.py's docstring. It's still audited, so the
     failure itself is part of the accountable record.
     """
-    is_returning = _is_returning(db, payload.full_name)
+    existing_patient = _find_existing_patient(db, payload.full_name)
+    is_returning = existing_patient is not None
 
-    patient_row = PatientRow(
-        patient_identifier=_next_patient_identifier(db),
-        full_name=payload.full_name,
-        birth_date=_estimate_birth_date(payload.age),
-        birth_date_is_estimated=True,
-    )
-    db.add(patient_row)
-    db.flush()  # populate patient_row.id for the FK columns below
+    if existing_patient is not None:
+        patient_row = existing_patient
+    else:
+        patient_row = PatientRow(
+            patient_identifier=_next_patient_identifier(db),
+            full_name=payload.full_name,
+            birth_date=_estimate_birth_date(payload.age),
+            birth_date_is_estimated=True,
+        )
+        db.add(patient_row)
+        db.flush()  # populate patient_row.id for the FK columns below
 
     encounter = Encounter(
         patient_id=patient_row.id,
@@ -299,19 +311,23 @@ def search_encounters(db: Session, query: str) -> list[CheckInResult]:
 
 
 def get_prior_visits(db: Session, encounter_id: str) -> list[CheckInResult] | None:
-    """Every other encounter for the same patient name, oldest first. Returns
-    None if `encounter_id` itself doesn't exist, so the route can 404."""
+    """
+    Every other encounter belonging to the same Patient row, oldest first.
+    Returns None if `encounter_id` itself doesn't exist, so the route can 404.
+
+    A direct FK filter now that visits consolidate onto one Patient row —
+    simpler and more correct than the earlier name-matching join, which was
+    only ever a name comparison. Two Encounters sharing patient_id are
+    guaranteed to be the same person by construction; two Encounters merely
+    sharing a name string were only a heuristic.
+    """
     current = db.get(Encounter, encounter_id)
     if current is None:
-        return None
-    patient_row = db.get(PatientRow, current.patient_id)
-    if patient_row is None:
         return None
 
     rows = (
         db.query(Encounter)
-        .join(PatientRow, Encounter.patient_id == PatientRow.id)
-        .filter(func.lower(PatientRow.full_name) == patient_row.full_name.strip().lower())
+        .filter(Encounter.patient_id == current.patient_id)
         .filter(Encounter.id != encounter_id, Encounter.card_json.isnot(None))
         .order_by(Encounter.period_start.asc())
         .all()
