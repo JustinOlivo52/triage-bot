@@ -294,7 +294,7 @@ pip install -r requirements-dev.txt -r backend/requirements.txt
 pytest
 ```
 
-198 tests, well under a second for the deterministic core and well under a minute total, with **no API key and no network** — every LLM call any test would otherwise need is stubbed at the same boundary `agents/triage_agent.py` exposes for it.
+204 tests, well under a second for the deterministic core and well under a minute total, with **no API key and no network** — every LLM call any test would otherwise need is stubbed at the same boundary `agents/triage_agent.py` exposes for it.
 
 Two CI jobs mirror that same split (`.github/workflows/tests.yml`):
 - **pure-logic** — `agents/assessment.py`, `memory/`, and `rag/`'s lexical path, installed with a deliberately narrow dependency list (no LangChain, no FastAPI). If these tests ever start needing more than that, one of the "pure" modules has leaked a dependency it shouldn't have, and the job fails on purpose.
@@ -317,7 +317,7 @@ Coverage includes: threshold tiering and boundary conditions, the extraction-to-
 - **Cost-aware escalation** — only `IMMEDIATE` patients trigger a physician-summary LLM call
 - **Honest failure modes** — a pipeline failure is surfaced as a system error, never disguised as a clinical alert or a fabricated ESI score
 - **Retrieval degrades in steps, not all-or-nothing** — semantic search (Voyage key) → lexical search (no key) → ungrounded reasoning (no index), never a crash
-- **Zero-dependency clinical-rules testing** — 198 tests, no API key or network, split across two CI jobs so the pure logic's dependency guarantee is actually enforced, not just claimed
+- **Zero-dependency clinical-rules testing** — 204 tests, no API key or network, split across two CI jobs so the pure logic's dependency guarantee is actually enforced, not just claimed
 - **Eval harness, ready to run** — `evals/` measures ESI agreement against clinician-labeled vignettes (exact-match, within-one, under/over-triage rate); the harness itself is tested, the vignette set is drafted and awaiting clinical review before any number from it is a real claim
 
 ---
@@ -344,10 +344,15 @@ Coverage includes: threshold tiering and boundary conditions, the extraction-to-
 - [x] `evals/` built and tested: vignette schema, agreement/under-triage-rate metrics, a runner against the real pipeline — see `evals/README.md`
 - [x] 20 starter vignettes spanning ESI 1-5, drafted against ESI v4 criteria
 
+**Done (age-banded vital thresholds — pediatric drafted, not yet a certified number)**
+- [x] Pediatric (age ≤5) gets its own `CRITICAL_VITALS_PEDIATRIC`/`CONCERNING_VITALS_PEDIATRIC` tables in `config.py`, applied throughout the pipeline (assessment, escalation, and the LLM prompt itself via `patient.age_group`)
+- [x] Fixes the exact documented bug: a well 3-year-old at HR 110 / RR 26 no longer registers as tachycardic/tachypneic
+- [x] Geriatric intentionally keeps adult thresholds — the real concern there (blunted response can mask severity) is handled by `assess_age_risk()` amplifying whatever finding *is* present, not by moving the numbers
+
 **Next**
 - [ ] Clinical review of `evals/vignettes.json` (Justin), then a real run against `claude-opus-5` — would turn the model split in `config.py` from a reasoned default into a measured one
 - [ ] Grow the vignette set toward the original 50-100 target once the starter batch is reviewed
-- [ ] Age-banded vital thresholds (current ranges are adult values)
+- [ ] Clinical review of the pediatric vital thresholds in `config.py`/`data/esi_reference.md` — same gate as the eval vignettes, see the note in the reference doc
 - [ ] Consolidate a returning patient's visits under one FHIR `Patient` with multiple `Encounter`s, rather than a fresh `Patient` row per visit
 - [ ] Database-level append-only enforcement on `audit_logs` (currently application-layer only)
 - [ ] Deploy — needs a hosting decision for two services + a database, not just Streamlit Community Cloud (see `DEPLOY.md`)
@@ -356,7 +361,7 @@ Coverage includes: threshold tiering and boundary conditions, the extraction-to-
 
 ## Known Limitations
 
-- **Vital thresholds are adult values.** They are applied to all ages. A well 3-year-old sits around HR 110 / RR 26 and will register as tachycardic and tachypneic.
+- **Pediatric vital thresholds are drafted, not clinically reviewed yet.** They fix the previous adult-only bug (see below) but the specific numbers in `config.py`'s `CRITICAL_VITALS_PEDIATRIC`/`CONCERNING_VITALS_PEDIATRIC` need Justin's sign-off, same as `data/esi_reference.md`'s pediatric section and `evals/vignettes.json`.
 - **No accuracy measurement yet.** There is no eval set, so the system's agreement with expert ESI assignment is currently unknown. Model choice per role is a reasoned default, not a measured one.
 - **The fallback symptom scan is naive.** If the triage call fails, symptom detection degrades to a substring scan, which cannot handle negation — deliberate (a few false positives beat losing detection entirely on an already-degraded path), but findings on a system-error card should be read with that in mind.
 - **`patient_identifier` generation isn't concurrency-safe.** It's a count-and-increment, not a DB sequence — fine for demo traffic, a real race under concurrent check-ins.

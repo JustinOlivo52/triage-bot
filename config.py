@@ -87,10 +87,22 @@ ESI_IMMEDIATE_MAX: int = 2
 #   CONCERNING — outside normal range; raises concern but does not by itself
 #                mean the patient cannot wait.
 #
-# Both tiers are adult values. Pediatric and geriatric ranges differ materially
-# (a well 3-year-old sits around HR 110 / RR 26) and are handled separately.
+# Age-banded: pediatric (age <= 5, matching AGE_THRESHOLDS below) gets its own
+# tables, because a well 3-year-old sits around HR 110 / RR 26 — both flagged
+# abnormal by adult ranges, which was a real bug (see CLAUDE.md / README Known
+# Limitations history). Geriatric patients keep the adult tables: their vital
+# signs aren't shifted the way pediatric ones are, and the actual clinical
+# concern for that age band — a blunted response can mask severity even when
+# numbers look normal — is handled by assess_age_risk() amplifying whatever
+# finding IS present, not by moving the raw thresholds themselves.
+#
+# CRITICAL_VITALS_PEDIATRIC / CONCERNING_VITALS_PEDIATRIC are drafted from
+# general pediatric vital-sign norms for this age band, the same way
+# data/esi_reference.md and evals/vignettes.json were drafted — pending
+# Justin's clinical review before being treated as fully validated (see the
+# note in data/esi_reference.md's Vital Sign Danger Zones section).
 
-CRITICAL_VITALS: dict = {
+CRITICAL_VITALS_ADULT: dict = {
     "hr_high": 130,        # bpm — marked tachycardia
     "hr_low": 45,          # bpm — marked bradycardia
     "rr_high": 30,         # breaths/min — severe tachypnea
@@ -103,7 +115,7 @@ CRITICAL_VITALS: dict = {
     "dbp_high": 120,       # mmHg — severe diastolic hypertension
 }
 
-CONCERNING_VITALS: dict = {
+CONCERNING_VITALS_ADULT: dict = {
     "hr_high": 100,        # bpm — tachycardia
     "hr_low": 60,          # bpm — bradycardia
     "rr_high": 20,         # breaths/min — tachypnea
@@ -116,8 +128,52 @@ CONCERNING_VITALS: dict = {
     "dbp_high": 110,       # mmHg — diastolic hypertension
 }
 
+# DRAFT — pending clinical review. Fever/hypoxia/hypothermia cutoffs are kept
+# the same as adult (those definitions don't meaningfully shift for this age
+# band); heart rate, respiratory rate, and blood pressure are lower than
+# adult, reflecting normal pediatric physiology.
+CRITICAL_VITALS_PEDIATRIC: dict = {
+    "hr_high": 180,        # bpm — marked tachycardia for this age band
+    "hr_low": 70,          # bpm — marked bradycardia
+    "rr_high": 50,         # breaths/min — severe tachypnea
+    "rr_low": 15,          # breaths/min — respiratory depression
+    "spo2_low": 90,        # % — significant hypoxia
+    "temp_high": 40.0,     # °C — hyperpyrexia
+    "temp_low": 35.0,      # °C — hypothermia
+    "sbp_high": 140,       # mmHg — severe hypertension (rare at this age, but a ceiling)
+    "sbp_low": 70,         # mmHg — hypotension
+    "dbp_high": 90,        # mmHg — severe diastolic hypertension
+}
+
+# DRAFT — pending clinical review. See CRITICAL_VITALS_PEDIATRIC above.
+CONCERNING_VITALS_PEDIATRIC: dict = {
+    "hr_high": 140,        # bpm — tachycardia
+    "hr_low": 80,          # bpm — bradycardia
+    "rr_high": 30,         # breaths/min — tachypnea
+    "rr_low": 20,          # breaths/min — low-normal respiratory rate
+    "spo2_low": 95,        # % — borderline oxygenation
+    "temp_high": 38.5,     # °C — fever
+    "temp_low": 36.0,      # °C — low temperature
+    "sbp_high": 120,       # mmHg — hypertensive urgency
+    "sbp_low": 80,         # mmHg — borderline hypotension
+    "dbp_high": 80,        # mmHg — diastolic hypertension
+}
+
+# Keyed by Patient.age_group (models.py) — "pediatric" / "adult" / "geriatric".
+# Geriatric intentionally maps to the adult tables; see the note above.
+CRITICAL_VITALS_BY_AGE_GROUP: dict[str, dict] = {
+    "pediatric": CRITICAL_VITALS_PEDIATRIC,
+    "adult": CRITICAL_VITALS_ADULT,
+    "geriatric": CRITICAL_VITALS_ADULT,
+}
+CONCERNING_VITALS_BY_AGE_GROUP: dict[str, dict] = {
+    "pediatric": CONCERNING_VITALS_PEDIATRIC,
+    "adult": CONCERNING_VITALS_ADULT,
+    "geriatric": CONCERNING_VITALS_ADULT,
+}
+
 AGE_THRESHOLDS: dict = {
-    "pediatric_max": 5,    # age ≤ 5 — atypical presentations, adult ranges do not apply
+    "pediatric_max": 5,    # age ≤ 5 — own vital-sign tables (above) + age-risk amplification
     "geriatric_min": 65,   # age ≥ 65 — blunted physiologic response masks severity
 }
 

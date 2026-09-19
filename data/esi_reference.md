@@ -13,6 +13,10 @@
 >
 > All thresholds in this document must match `config.py`. If they diverge, the
 > code is the source of truth and this document is wrong.
+>
+> **Exception:** the pediatric vital-sign thresholds in "Vital Sign Danger
+> Zones" below are a later addition and are still draft, not reviewed —
+> see the note in that section.
 
 ---
 
@@ -142,8 +146,11 @@ resource. A blood test plus an imaging study is two.
 
 ## Vital Sign Danger Zones
 
-These thresholds are adult values and are duplicated in `config.py`, which is
-the operative source. They are applied in two tiers.
+Two age bands, each duplicated in `config.py` (`CRITICAL_VITALS_ADULT` /
+`CONCERNING_VITALS_ADULT` and the `_PEDIATRIC` equivalents), which is the
+operative source. Each is applied in two tiers.
+
+### Adult (also applied to geriatric patients — see Age as a Risk Modifier below)
 
 **Concerning** — outside normal range; a reason to look more closely, not by
 itself a statement that the patient cannot wait:
@@ -157,11 +164,33 @@ heart rate above 130 or below 45; respiratory rate above 30 or below 8;
 oxygen saturation below 90%; temperature above 40.0 °C or below 35.0 °C;
 systolic pressure above 220 or below 90; diastolic pressure above 120.
 
-**These ranges do not apply to children.** Normal paediatric heart and
-respiratory rates are substantially higher and vary by age; a well three-year-old
-sits near a heart rate of 110 and a respiratory rate of 26, both of which read
-as abnormal against adult values. Age-banded thresholds are a known gap in the
-current implementation.
+### Pediatric (age 5 and under)
+
+> **Draft — pending clinical review.** Normal paediatric heart and
+> respiratory rates are substantially higher, and normal blood pressure
+> lower, than adult values; a well three-year-old sits near a heart rate of
+> 110 and a respiratory rate of 26, both of which previously read as
+> abnormal against adult-only thresholds. The ranges below fix that, but
+> unlike the rest of this document they have **not yet been checked by
+> Justin** — they were drafted from general pediatric vital-sign norms for
+> this age band, the same way the seed cohort and eval vignettes were
+> drafted before his review. Treat these specific numbers as unverified
+> until this note is removed.
+
+**Concerning:**
+heart rate above 140 or below 80; respiratory rate above 30 or below 20;
+oxygen saturation below 95%; temperature above 38.5 °C or below 36.0 °C;
+systolic pressure above 120 or below 80; diastolic pressure above 80.
+
+**Critical:**
+heart rate above 180 or below 70; respiratory rate above 50 or below 15;
+oxygen saturation below 90%; temperature above 40.0 °C or below 35.0 °C;
+systolic pressure above 140 or below 70; diastolic pressure above 90.
+
+Fever and hypoxia/hypothermia cutoffs are kept the same as adult — those
+definitions don't meaningfully shift for this age band. Heart rate,
+respiratory rate, and blood pressure are lower, reflecting normal pediatric
+physiology.
 
 ---
 
@@ -200,9 +229,10 @@ Age alone does not determine acuity. Age combined with any other abnormal
 finding raises it, because both extremes of the age range blunt the usual
 warning signs.
 
-**Paediatric patients (roughly 5 and under)** cannot reliably report symptoms,
-compensate well until they decompensate abruptly, and have age-specific normal
-ranges that adult thresholds misread.
+**Paediatric patients (roughly 5 and under)** cannot reliably report symptoms
+and compensate well until they decompensate abruptly — true regardless of
+which vital-sign thresholds are applied, which is why age remains a risk
+modifier here even though age-banded vital thresholds (above) now exist.
 
 **Geriatric patients (roughly 65 and over)** frequently present atypically.
 Myocardial infarction without chest pain, infection without fever, and acute

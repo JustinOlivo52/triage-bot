@@ -99,7 +99,7 @@ def assess_node(state: TriageState) -> TriageState:
     patient: Patient = state["patient"]
     logger.info("assess_node — %s", patient.patient_id)
 
-    return {**state, "vital_findings": assess_vitals(patient.vitals)}
+    return {**state, "vital_findings": assess_vitals(patient.vitals, patient.age_group)}
 
 
 # ─── Node 2 — Triage Reasoning ───────────────────────────────────────────────
@@ -137,8 +137,8 @@ ESI SCORING GUIDE:
 - ESI 4: Stable, requires exactly 1 resource
 - ESI 5: Stable, no resources needed — can be seen and discharged
 
-VITAL SIGN THRESHOLDS (adult ranges):
-{format_thresholds_for_prompt()}
+VITAL SIGN THRESHOLDS (for this patient's age band):
+{format_thresholds_for_prompt(patient.age_group)}
 
 The vital sign findings below are measured values compared against those
 thresholds. They are reliable — treat them as fact.

@@ -19,9 +19,9 @@ from typing import NamedTuple, Optional
 from config import (
     AGE_THRESHOLDS,
     CONCERNING_SYMPTOMS,
-    CONCERNING_VITALS,
+    CONCERNING_VITALS_BY_AGE_GROUP,
     CRITICAL_SYMPTOMS,
-    CRITICAL_VITALS,
+    CRITICAL_VITALS_BY_AGE_GROUP,
     ESI_IMMEDIATE_MAX,
 )
 from models import (
@@ -45,9 +45,10 @@ class _VitalRule(NamedTuple):
     """
     One vital sign and the labels used to describe it out of range.
 
-    `key` is the prefix used in CRITICAL_VITALS / CONCERNING_VITALS, so a rule
-    with key "hr" reads `hr_high` and `hr_low` from both tiers. A label of None
-    means that direction is not evaluated (SpO2 has no dangerous upper bound).
+    `key` is the prefix used in the CRITICAL_VITALS_*/CONCERNING_VITALS_* age-
+    band tables, so a rule with key "hr" reads `hr_high` and `hr_low` from
+    both tiers. A label of None means that direction is not evaluated (SpO2
+    has no dangerous upper bound).
     """
 
     attr: str            # attribute name on VitalSigns
@@ -96,17 +97,20 @@ def _vital_finding(
     )
 
 
-def _evaluate_vital(rule: _VitalRule, value: float) -> Optional[ClinicalFinding]:
+def _evaluate_vital(
+    rule: _VitalRule, value: float, critical_table: dict, concerning_table: dict
+) -> Optional[ClinicalFinding]:
     """
-    Evaluate one vital against both tiers, most severe first.
+    Evaluate one vital against both tiers of the given age band, most severe
+    first.
 
     Returns at most one finding — a heart rate of 165 is marked tachycardia, not
     marked tachycardia *and* tachycardia.
     """
-    critical_high = CRITICAL_VITALS.get(f"{rule.key}_high")
-    critical_low = CRITICAL_VITALS.get(f"{rule.key}_low")
-    concerning_high = CONCERNING_VITALS.get(f"{rule.key}_high")
-    concerning_low = CONCERNING_VITALS.get(f"{rule.key}_low")
+    critical_high = critical_table.get(f"{rule.key}_high")
+    critical_low = critical_table.get(f"{rule.key}_low")
+    concerning_high = concerning_table.get(f"{rule.key}_high")
+    concerning_low = concerning_table.get(f"{rule.key}_low")
 
     if rule.critical_high_label and critical_high is not None and value > critical_high:
         return _vital_finding(rule, value, FindingSeverity.CRITICAL,
@@ -123,37 +127,47 @@ def _evaluate_vital(rule: _VitalRule, value: float) -> Optional[ClinicalFinding]
     return None
 
 
-def assess_vitals(vitals: VitalSigns) -> list[ClinicalFinding]:
-    """Compare every vital sign against the critical and concerning tiers."""
+def assess_vitals(vitals: VitalSigns, age_group: str) -> list[ClinicalFinding]:
+    """
+    Compare every vital sign against the critical and concerning tiers for
+    the patient's age band (see config.py's *_BY_AGE_GROUP tables) — a
+    pediatric HR of 110 and an adult HR of 110 are not evaluated the same
+    way, because they aren't the same finding clinically.
+    """
+    critical = CRITICAL_VITALS_BY_AGE_GROUP[age_group]
+    concerning = CONCERNING_VITALS_BY_AGE_GROUP[age_group]
     findings: list[ClinicalFinding] = []
     for rule in _VITAL_RULES:
-        finding = _evaluate_vital(rule, getattr(vitals, rule.attr))
+        finding = _evaluate_vital(rule, getattr(vitals, rule.attr), critical, concerning)
         if finding is not None:
             findings.append(finding)
     return findings
 
 
-def vital_severity_map(vitals: VitalSigns) -> dict[str, FindingSeverity]:
+def vital_severity_map(vitals: VitalSigns, age_group: str) -> dict[str, FindingSeverity]:
     """
-    Map each out-of-range vital attribute to its severity.
+    Map each out-of-range vital attribute to its severity, for this age band.
 
     Used by the UI so display highlighting reads the same thresholds as the
     clinical logic instead of keeping its own copy.
     """
+    critical = CRITICAL_VITALS_BY_AGE_GROUP[age_group]
+    concerning = CONCERNING_VITALS_BY_AGE_GROUP[age_group]
     severities: dict[str, FindingSeverity] = {}
     for rule in _VITAL_RULES:
-        finding = _evaluate_vital(rule, getattr(vitals, rule.attr))
+        finding = _evaluate_vital(rule, getattr(vitals, rule.attr), critical, concerning)
         if finding is not None:
             severities[rule.attr] = finding.severity
     return severities
 
 
-def format_thresholds_for_prompt() -> str:
+def format_thresholds_for_prompt(age_group: str) -> str:
     """
-    Render the vital sign thresholds as prompt text.
+    Render this age band's vital sign thresholds as prompt text.
 
     Single source of truth: the LLM is told the same numbers the deterministic
-    checks use, so the prompt cannot drift away from config.py.
+    checks use for this patient's age group, so the prompt cannot drift away
+    from config.py, and a pediatric patient isn't scored against adult ranges.
     """
     def _bounds(table: dict, rule: _VitalRule) -> str:
         high = table.get(f"{rule.key}_high")
@@ -165,10 +179,13 @@ def format_thresholds_for_prompt() -> str:
             parts.append(f"<{low}")
         return " or ".join(parts)
 
-    lines: list[str] = []
+    critical_table = CRITICAL_VITALS_BY_AGE_GROUP[age_group]
+    concerning_table = CONCERNING_VITALS_BY_AGE_GROUP[age_group]
+
+    lines: list[str] = [f"(age band: {age_group})"]
     for rule in _VITAL_RULES:
-        concerning = _bounds(CONCERNING_VITALS, rule)
-        critical = _bounds(CRITICAL_VITALS, rule)
+        concerning = _bounds(concerning_table, rule)
+        critical = _bounds(critical_table, rule)
         lines.append(
             f"- {rule.display} ({rule.unit}): concerning {concerning}; critical {critical}"
         )
@@ -342,7 +359,7 @@ def assess_patient(patient: Patient) -> list[ClinicalFinding]:
     """
     return combine_findings(
         patient,
-        assess_vitals(patient.vitals),
+        assess_vitals(patient.vitals, patient.age_group),
         assess_symptoms(patient.chief_complaint),
     )
 
