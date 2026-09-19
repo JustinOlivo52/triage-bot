@@ -18,17 +18,18 @@ jobs:
           cache: pip
 
       # Only what tests/test_assessment.py, test_retrieval.py (lexical path
-      # — no VOYAGE_API_KEY here, so no network), test_store.py, and
-      # test_schema_utils.py actually import. Deliberately excludes
-      # langchain/langgraph/fastapi/sqlalchemy: if these four files ever
-      # start requiring the full stack, one of the pure-logic modules
-      # (agents/assessment.py, memory/, rag/'s lexical path, schema_utils.py)
+      # — no VOYAGE_API_KEY here, so no network), test_store.py,
+      # test_schema_utils.py, test_eval_metrics.py, and test_eval_vignettes.py
+      # actually import. Deliberately excludes langchain/langgraph/fastapi/
+      # sqlalchemy: if these files ever start requiring the full stack, one
+      # of the pure-logic modules (agents/assessment.py, memory/, rag/'s
+      # lexical path, schema_utils.py, evals/metrics.py, evals/vignettes.py)
       # has leaked a dependency it shouldn't have, and this job should fail.
       - name: Install test dependencies
         run: pip install pydantic python-dotenv typing-extensions numpy requests pytest
 
       - name: Run pure-logic tests
-        run: pytest tests/test_assessment.py tests/test_retrieval.py tests/test_store.py tests/test_schema_utils.py
+        run: pytest tests/test_assessment.py tests/test_retrieval.py tests/test_store.py tests/test_schema_utils.py tests/test_eval_metrics.py tests/test_eval_vignettes.py
         env:
           ANTHROPIC_API_KEY: ""
 

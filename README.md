@@ -207,9 +207,17 @@ triage-bot/
 │
 ├── data/                     # Clinical reference, precomputed index, seed cohort — committed
 │
+├── evals/                    # Measures ESI agreement against clinician-labeled vignettes
+│   ├── vignettes.json          # Draft vignette set — see evals/README.md before trusting any number
+│   ├── vignettes.py            # Pydantic schema + loader (pure — no LLM)
+│   ├── metrics.py               # Exact-match / within-one / under-triage rate (pure — no LLM)
+│   └── runner.py                 # Runs the real pipeline against reviewed vignettes — needs a real key
+│
 ├── tests/
-│   ├── test_assessment.py, test_retrieval.py, test_store.py, test_schema_utils.py
+│   ├── test_assessment.py, test_retrieval.py, test_store.py, test_schema_utils.py,
+│   │   test_eval_metrics.py, test_eval_vignettes.py
 │   │                          # Pure logic — no API key, no network, no backend
+│   ├── test_eval_runner.py    # Stubs the LLM call — needs the full pipeline stack to import, not a key
 │   └── backend/               # API + DB tests — SQLite in-memory, still no LLM key needed
 │
 └── .github/workflows/
@@ -286,7 +294,7 @@ pip install -r requirements-dev.txt -r backend/requirements.txt
 pytest
 ```
 
-182 tests, well under a second for the deterministic core and well under a minute total, with **no API key and no network** — every LLM call any test would otherwise need is stubbed at the same boundary `agents/triage_agent.py` exposes for it.
+198 tests, well under a second for the deterministic core and well under a minute total, with **no API key and no network** — every LLM call any test would otherwise need is stubbed at the same boundary `agents/triage_agent.py` exposes for it.
 
 Two CI jobs mirror that same split (`.github/workflows/tests.yml`):
 - **pure-logic** — `agents/assessment.py`, `memory/`, and `rag/`'s lexical path, installed with a deliberately narrow dependency list (no LangChain, no FastAPI). If these tests ever start needing more than that, one of the "pure" modules has leaked a dependency it shouldn't have, and the job fails on purpose.
@@ -309,7 +317,8 @@ Coverage includes: threshold tiering and boundary conditions, the extraction-to-
 - **Cost-aware escalation** — only `IMMEDIATE` patients trigger a physician-summary LLM call
 - **Honest failure modes** — a pipeline failure is surfaced as a system error, never disguised as a clinical alert or a fabricated ESI score
 - **Retrieval degrades in steps, not all-or-nothing** — semantic search (Voyage key) → lexical search (no key) → ungrounded reasoning (no index), never a crash
-- **Zero-dependency clinical-rules testing** — 182 tests, no API key or network, split across two CI jobs so the pure logic's dependency guarantee is actually enforced, not just claimed
+- **Zero-dependency clinical-rules testing** — 198 tests, no API key or network, split across two CI jobs so the pure logic's dependency guarantee is actually enforced, not just claimed
+- **Eval harness, ready to run** — `evals/` measures ESI agreement against clinician-labeled vignettes (exact-match, within-one, under/over-triage rate); the harness itself is tested, the vignette set is drafted and awaiting clinical review before any number from it is a real claim
 
 ---
 
@@ -331,8 +340,13 @@ Coverage includes: threshold tiering and boundary conditions, the extraction-to-
 - [x] Phase 4 — Streamlit fully migrated off direct `agents/`/`memory/` imports onto the API; real login replaces the old anonymous demo-session model; nurse-override/disposition workflow added
 - [x] CI fixed — a pre-existing dependency gap had left it silently red since the V1 RAG rewrite; now split into a narrow pure-logic job and a full-suite job, both verified in clean environments
 
+**Done (eval harness — infrastructure, not yet a certified number)**
+- [x] `evals/` built and tested: vignette schema, agreement/under-triage-rate metrics, a runner against the real pipeline — see `evals/README.md`
+- [x] 20 starter vignettes spanning ESI 1-5, drafted against ESI v4 criteria
+
 **Next**
-- [ ] Eval set of clinician-scored vignettes with a measured agreement rate (would turn the Opus/Sonnet model split from a reasoned default into a measured one)
+- [ ] Clinical review of `evals/vignettes.json` (Justin), then a real run against `claude-opus-5` — would turn the model split in `config.py` from a reasoned default into a measured one
+- [ ] Grow the vignette set toward the original 50-100 target once the starter batch is reviewed
 - [ ] Age-banded vital thresholds (current ranges are adult values)
 - [ ] Consolidate a returning patient's visits under one FHIR `Patient` with multiple `Encounter`s, rather than a fresh `Patient` row per visit
 - [ ] Database-level append-only enforcement on `audit_logs` (currently application-layer only)

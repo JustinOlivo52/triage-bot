@@ -19,6 +19,12 @@ data/*.pdf
 *.db
 *.db-journal
 
+# ─── Eval harness results ──────────────────────────────────────────────────────
+# Each run costs real API money (evals/runner.py) and produces timestamped
+# scratch output, not meant to be committed automatically. Commit a specific
+# result deliberately if/when it becomes the number the README cites.
+evals/results/
+
 # ─── Python ───────────────────────────────────────────────────────────────────
 __pycache__/
 *.py[cod]

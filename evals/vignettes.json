@@ -1,0 +1,205 @@
+{
+  "_comment": "Draft vignette set for the eval harness. Every entry has reviewed_by_clinician: false — drafted by Claude against documented ESI v4 criteria, NOT yet checked by Justin. Do not cite any accuracy number computed from these until that review happens (see evals/README.md). A starter batch of 20, spread across ESI 1-5; the plan calls for 50-100 eventually.",
+  "vignettes": [
+    {
+      "id": "EVAL-001",
+      "age": 68,
+      "weight_kg": 82,
+      "chief_complaint": "found unresponsive at home, snoring respirations, minimal chest rise noted by family",
+      "vitals": {"heart_rate": 40, "systolic_bp": 70, "diastolic_bp": 40, "respiratory_rate": 6, "spo2": 78.0, "temperature_c": 35.5},
+      "reference_esi": 1,
+      "reference_rationale": "Unresponsive with inadequate respiratory effort and shock physiology — requires immediate airway management and resuscitation.",
+      "reviewed_by_clinician": false
+    },
+    {
+      "id": "EVAL-002",
+      "age": 55,
+      "weight_kg": 90,
+      "chief_complaint": "severe difficulty breathing, can barely speak in full sentences, lips look blue per spouse",
+      "vitals": {"heart_rate": 138, "systolic_bp": 100, "diastolic_bp": 70, "respiratory_rate": 40, "spo2": 76.0, "temperature_c": 37.2},
+      "reference_esi": 1,
+      "reference_rationale": "Impending respiratory failure with severe hypoxia — immediate life-saving intervention (airway/ventilatory support) required.",
+      "reviewed_by_clinician": false
+    },
+    {
+      "id": "EVAL-003",
+      "age": 30,
+      "weight_kg": 68,
+      "chief_complaint": "ate shellfish 10 minutes ago, throat feels like it's closing, can't catch breath, face and lips swelling",
+      "vitals": {"heart_rate": 128, "systolic_bp": 82, "diastolic_bp": 50, "respiratory_rate": 30, "spo2": 89.0, "temperature_c": 37.0},
+      "reference_esi": 1,
+      "reference_rationale": "Anaphylaxis with airway compromise and shock — immediate epinephrine and airway intervention required.",
+      "reviewed_by_clinician": false
+    },
+    {
+      "id": "EVAL-004",
+      "age": 24,
+      "weight_kg": 75,
+      "chief_complaint": "motorcycle crash, leg bone visibly deformed and bleeding heavily, feeling dizzy and cold",
+      "vitals": {"heart_rate": 145, "systolic_bp": 78, "diastolic_bp": 48, "respiratory_rate": 28, "spo2": 91.0, "temperature_c": 36.0},
+      "reference_esi": 1,
+      "reference_rationale": "Hemorrhagic shock from major trauma — immediate resuscitation needed.",
+      "reviewed_by_clinician": false
+    },
+    {
+      "id": "EVAL-005",
+      "age": 58,
+      "weight_kg": 95,
+      "chief_complaint": "crushing chest pressure radiating to the jaw, sweating, started 20 minutes ago",
+      "vitals": {"heart_rate": 105, "systolic_bp": 150, "diastolic_bp": 95, "respiratory_rate": 20, "spo2": 96.0, "temperature_c": 37.0},
+      "reference_esi": 2,
+      "reference_rationale": "High suspicion for acute coronary syndrome — high-risk situation that should not wait, though hemodynamically stable enough that no immediate resuscitative intervention is indicated yet.",
+      "reviewed_by_clinician": false
+    },
+    {
+      "id": "EVAL-006",
+      "age": 71,
+      "weight_kg": 78,
+      "chief_complaint": "sudden onset right-sided face drooping and slurred speech starting 30 minutes ago",
+      "vitals": {"heart_rate": 88, "systolic_bp": 168, "diastolic_bp": 94, "respiratory_rate": 18, "spo2": 97.0, "temperature_c": 36.8},
+      "reference_esi": 2,
+      "reference_rationale": "Acute stroke syndrome within the treatment window — high-risk, time-critical presentation.",
+      "reviewed_by_clinician": false
+    },
+    {
+      "id": "EVAL-007",
+      "age": 82,
+      "weight_kg": 65,
+      "chief_complaint": "sudden severe abdominal pain, abdomen feels rigid, hasn't passed gas in over a day",
+      "vitals": {"heart_rate": 110, "systolic_bp": 100, "diastolic_bp": 60, "respiratory_rate": 22, "spo2": 95.0, "temperature_c": 38.2},
+      "reference_esi": 2,
+      "reference_rationale": "Possible bowel perforation or peritonitis in an elderly patient — high-risk presentation.",
+      "reviewed_by_clinician": false
+    },
+    {
+      "id": "EVAL-008",
+      "age": 16,
+      "weight_kg": 58,
+      "chief_complaint": "wrote a note about wanting to end her life, has a specific plan and access to pills, calm but tearful",
+      "vitals": {"heart_rate": 82, "systolic_bp": 118, "diastolic_bp": 76, "respiratory_rate": 16, "spo2": 99.0, "temperature_c": 36.9},
+      "reference_esi": 2,
+      "reference_rationale": "Active suicidal ideation with plan and means — high-risk, cannot wait, requires immediate safety evaluation.",
+      "reviewed_by_clinician": false
+    },
+    {
+      "id": "EVAL-009",
+      "age": 2,
+      "weight_kg": 13,
+      "chief_complaint": "high fever, stiff neck, won't stop crying and is difficult to console",
+      "vitals": {"heart_rate": 160, "systolic_bp": 90, "diastolic_bp": 55, "respiratory_rate": 34, "spo2": 96.0, "temperature_c": 39.8},
+      "reference_esi": 2,
+      "reference_rationale": "Possible meningitis in a toddler — high-risk presentation warranting urgent evaluation.",
+      "reviewed_by_clinician": false
+    },
+    {
+      "id": "EVAL-010",
+      "age": 34,
+      "weight_kg": 70,
+      "chief_complaint": "constant right lower abdominal pain for 8 hours, nausea, no appetite",
+      "vitals": {"heart_rate": 96, "systolic_bp": 122, "diastolic_bp": 78, "respiratory_rate": 18, "spo2": 98.0, "temperature_c": 37.9},
+      "reference_esi": 3,
+      "reference_rationale": "Presentation concerning for appendicitis — stable vitals, needs labs and imaging (2+ resources).",
+      "reviewed_by_clinician": false
+    },
+    {
+      "id": "EVAL-011",
+      "age": 26,
+      "weight_kg": 64,
+      "chief_complaint": "known asthmatic, wheezing and chest tightness after running out of inhaler two days ago",
+      "vitals": {"heart_rate": 104, "systolic_bp": 128, "diastolic_bp": 80, "respiratory_rate": 26, "spo2": 93.0, "temperature_c": 37.0},
+      "reference_esi": 3,
+      "reference_rationale": "Moderate asthma exacerbation needing nebulizer treatment and reassessment (2+ resources), stable otherwise.",
+      "reviewed_by_clinician": false
+    },
+    {
+      "id": "EVAL-012",
+      "age": 45,
+      "weight_kg": 88,
+      "chief_complaint": "slipped on ice, ankle very swollen and painful, cannot bear weight",
+      "vitals": {"heart_rate": 88, "systolic_bp": 130, "diastolic_bp": 82, "respiratory_rate": 16, "spo2": 99.0, "temperature_c": 36.7},
+      "reference_esi": 3,
+      "reference_rationale": "Likely fracture needing imaging plus splinting and pain management (2+ resources).",
+      "reviewed_by_clinician": false
+    },
+    {
+      "id": "EVAL-013",
+      "age": 29,
+      "weight_kg": 60,
+      "chief_complaint": "burning with urination for three days, now with fever and flank pain",
+      "vitals": {"heart_rate": 100, "systolic_bp": 110, "diastolic_bp": 70, "respiratory_rate": 18, "spo2": 98.0, "temperature_c": 38.6},
+      "reference_esi": 3,
+      "reference_rationale": "Likely pyelonephritis needing labs, urinalysis, and IV antibiotics (2+ resources).",
+      "reviewed_by_clinician": false
+    },
+    {
+      "id": "EVAL-014",
+      "age": 40,
+      "weight_kg": 85,
+      "chief_complaint": "cut hand on a kitchen knife, bleeding controlled with a towel, wants stitches",
+      "vitals": {"heart_rate": 78, "systolic_bp": 122, "diastolic_bp": 80, "respiratory_rate": 14, "spo2": 99.0, "temperature_c": 36.8},
+      "reference_esi": 4,
+      "reference_rationale": "Simple laceration needing exactly one resource (suturing).",
+      "reviewed_by_clinician": false
+    },
+    {
+      "id": "EVAL-015",
+      "age": 19,
+      "weight_kg": 72,
+      "chief_complaint": "twisted ankle playing basketball, mild swelling, can walk with a limp",
+      "vitals": {"heart_rate": 76, "systolic_bp": 118, "diastolic_bp": 74, "respiratory_rate": 14, "spo2": 99.0, "temperature_c": 36.9},
+      "reference_esi": 4,
+      "reference_rationale": "Minor sprain, likely needs only an X-ray to rule out fracture.",
+      "reviewed_by_clinician": false
+    },
+    {
+      "id": "EVAL-016",
+      "age": 33,
+      "weight_kg": 66,
+      "chief_complaint": "burning with urination for one day, no fever, otherwise feels fine",
+      "vitals": {"heart_rate": 74, "systolic_bp": 116, "diastolic_bp": 74, "respiratory_rate": 14, "spo2": 99.0, "temperature_c": 37.0},
+      "reference_esi": 4,
+      "reference_rationale": "Uncomplicated UTI symptoms needing only a urinalysis (one resource).",
+      "reviewed_by_clinician": false
+    },
+    {
+      "id": "EVAL-017",
+      "age": 50,
+      "weight_kg": 80,
+      "chief_complaint": "here for a refill of blood pressure medication, ran out three days ago, feels fine",
+      "vitals": {"heart_rate": 72, "systolic_bp": 128, "diastolic_bp": 82, "respiratory_rate": 14, "spo2": 99.0, "temperature_c": 36.8},
+      "reference_esi": 5,
+      "reference_rationale": "No acute complaint, no resources needed.",
+      "reviewed_by_clinician": false
+    },
+    {
+      "id": "EVAL-018",
+      "age": 27,
+      "weight_kg": 62,
+      "chief_complaint": "runny nose and mild sore throat for two days, no fever",
+      "vitals": {"heart_rate": 70, "systolic_bp": 118, "diastolic_bp": 76, "respiratory_rate": 14, "spo2": 99.0, "temperature_c": 37.1},
+      "reference_esi": 5,
+      "reference_rationale": "Minor viral upper respiratory symptoms, no resources needed.",
+      "reviewed_by_clinician": false
+    },
+    {
+      "id": "EVAL-019",
+      "age": 8,
+      "weight_kg": 26,
+      "chief_complaint": "small itchy rash on arm after playing outside, no other symptoms, playful and comfortable",
+      "vitals": {"heart_rate": 90, "systolic_bp": 100, "diastolic_bp": 65, "respiratory_rate": 18, "spo2": 99.0, "temperature_c": 36.9},
+      "reference_esi": 5,
+      "reference_rationale": "Minor localized rash with no systemic symptoms, no resources needed.",
+      "reviewed_by_clinician": false
+    },
+    {
+      "id": "EVAL-020",
+      "age": 62,
+      "weight_kg": 84,
+      "chief_complaint": "here for a note clearing him to return to work after a cold last week, feels back to normal",
+      "vitals": {"heart_rate": 74, "systolic_bp": 124, "diastolic_bp": 78, "respiratory_rate": 16, "spo2": 98.0, "temperature_c": 36.7},
+      "reference_esi": 5,
+      "reference_rationale": "Administrative visit, no acute complaint, no resources needed.",
+      "reviewed_by_clinician": false
+    }
+  ]
+}
