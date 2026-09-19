@@ -6,6 +6,9 @@ code and docs claim they are.
 
 from datetime import date
 
+import pytest
+from sqlalchemy.exc import IntegrityError
+
 from backend.models.audit_log import AuditAction, AuditLog
 from backend.models.encounter import Encounter, EncounterStatus
 from backend.models.observation import VITAL_LOINC_CODES, Observation
@@ -44,7 +47,6 @@ class TestPatient:
 
         db_session.add(Patient(patient_identifier="PT-0003", full_name="B", birth_date=date(2000, 1, 1)))
         import pytest
-        from sqlalchemy.exc import IntegrityError
         with pytest.raises(IntegrityError):
             db_session.commit()
 
@@ -174,3 +176,48 @@ class TestAuditLog:
         db_session.refresh(log)
 
         assert log.metadata_dict == {}
+
+    def test_rows_cannot_be_updated_at_the_database_level(self, db_session):
+        """Not just 'no update route exists' — the database itself refuses,
+        via the BEFORE UPDATE trigger registered in audit_log.py."""
+        u = User(username="c", hashed_password=hash_password("x"), full_name="C", role=UserRole.NURSE)
+        db_session.add(u)
+        db_session.commit()
+
+        log = AuditLog(actor_user_id=u.id, action=AuditAction.LOGIN, resource_type="user", resource_id=u.id)
+        db_session.add(log)
+        db_session.commit()
+
+        log.resource_type = "tampered"
+        with pytest.raises(IntegrityError, match="append-only"):
+            db_session.commit()
+        db_session.rollback()
+
+    def test_rows_cannot_be_deleted_at_the_database_level(self, db_session):
+        u = User(username="d", hashed_password=hash_password("x"), full_name="D", role=UserRole.NURSE)
+        db_session.add(u)
+        db_session.commit()
+
+        log = AuditLog(actor_user_id=u.id, action=AuditAction.LOGIN, resource_type="user", resource_id=u.id)
+        db_session.add(log)
+        db_session.commit()
+
+        db_session.delete(log)
+        with pytest.raises(IntegrityError, match="append-only"):
+            db_session.commit()
+        db_session.rollback()
+
+    def test_bulk_delete_is_also_blocked(self, db_session):
+        """Triggers are row-level, so a bulk DELETE can't route around the
+        single-row check above."""
+        u = User(username="e", hashed_password=hash_password("x"), full_name="E", role=UserRole.NURSE)
+        db_session.add(u)
+        db_session.commit()
+
+        db_session.add(AuditLog(actor_user_id=u.id, action=AuditAction.LOGIN, resource_type="user", resource_id=u.id))
+        db_session.commit()
+
+        with pytest.raises(IntegrityError, match="append-only"):
+            db_session.query(AuditLog).delete()
+            db_session.commit()
+        db_session.rollback()

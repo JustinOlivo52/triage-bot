@@ -1,13 +1,23 @@
 """
 backend/models/audit_log.py — Append-only record of every mutating action.
 
-Append-only is enforced at the application layer for V2: the audit router
-(backend/api/routes/audit.py) exposes no update or delete endpoint, and
-tests/backend/test_audit.py asserts none exists. True database-level
-enforcement (a Postgres rule blocking UPDATE/DELETE on this table) is a
-documented follow-up in V2_PLAN.md, not done here — SQLite, used in tests,
-has no equivalent mechanism, so enforcing it only in Postgres would mean the
-test suite could not verify the thing it's supposed to guarantee.
+Append-only is enforced at two layers now:
+
+  - Application layer: the audit router (backend/api/routes/audit.py)
+    exposes no update or delete endpoint, and tests/backend/test_audit.py
+    asserts none exists.
+  - Database layer: a BEFORE UPDATE / BEFORE DELETE trigger on this table
+    that aborts the statement outright, so even a raw SQL UPDATE or a bug
+    in some future code path can't silently rewrite history.
+
+The original version of this file claimed SQLite "has no equivalent
+mechanism" to Postgres rules/triggers and left DB-level enforcement as a
+documented follow-up for that reason. That claim was wrong — SQLite has
+triggers too, just different syntax — so both dialects get one here,
+registered via SQLAlchemy DDL events on `after_create` so they fire whether
+the table is built by Alembic (real deployments) or by
+Base.metadata.create_all() (the test suite, see tests/backend/conftest.py).
+Row-level, so they apply to a bulk DELETE/UPDATE the same as a single-row one.
 """
 
 import enum
@@ -16,7 +26,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import DateTime, Enum, ForeignKey, String, Text
+from sqlalchemy import DDL, DateTime, Enum, ForeignKey, String, Text, event
 from sqlalchemy.orm import Mapped, mapped_column
 
 from backend.db.base import Base
@@ -59,3 +69,49 @@ class AuditLog(Base):
     @metadata_dict.setter
     def metadata_dict(self, value: dict[str, Any]) -> None:
         self.metadata_json = json.dumps(value, default=str)
+
+
+# ─── Database-level append-only enforcement ────────────────────────────────
+
+_SQLITE_NO_UPDATE = DDL("""
+    CREATE TRIGGER audit_logs_no_update
+    BEFORE UPDATE ON audit_logs
+    BEGIN
+        SELECT RAISE(ABORT, 'audit_logs is append-only: UPDATE is not allowed');
+    END
+""")
+
+_SQLITE_NO_DELETE = DDL("""
+    CREATE TRIGGER audit_logs_no_delete
+    BEFORE DELETE ON audit_logs
+    BEGIN
+        SELECT RAISE(ABORT, 'audit_logs is append-only: DELETE is not allowed');
+    END
+""")
+
+# Postgres triggers need a function to call; one function, two triggers.
+_POSTGRES_FUNCTION = DDL("""
+    CREATE OR REPLACE FUNCTION audit_logs_append_only() RETURNS trigger AS $$
+    BEGIN
+        RAISE EXCEPTION 'audit_logs is append-only: % is not allowed', TG_OP;
+    END;
+    $$ LANGUAGE plpgsql
+""")
+
+_POSTGRES_NO_UPDATE = DDL("""
+    CREATE TRIGGER audit_logs_no_update
+    BEFORE UPDATE ON audit_logs
+    FOR EACH ROW EXECUTE FUNCTION audit_logs_append_only()
+""")
+
+_POSTGRES_NO_DELETE = DDL("""
+    CREATE TRIGGER audit_logs_no_delete
+    BEFORE DELETE ON audit_logs
+    FOR EACH ROW EXECUTE FUNCTION audit_logs_append_only()
+""")
+
+event.listen(AuditLog.__table__, "after_create", _SQLITE_NO_UPDATE.execute_if(dialect="sqlite"))
+event.listen(AuditLog.__table__, "after_create", _SQLITE_NO_DELETE.execute_if(dialect="sqlite"))
+event.listen(AuditLog.__table__, "after_create", _POSTGRES_FUNCTION.execute_if(dialect="postgresql"))
+event.listen(AuditLog.__table__, "after_create", _POSTGRES_NO_UPDATE.execute_if(dialect="postgresql"))
+event.listen(AuditLog.__table__, "after_create", _POSTGRES_NO_DELETE.execute_if(dialect="postgresql"))
