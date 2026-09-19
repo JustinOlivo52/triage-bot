@@ -1,0 +1,586 @@
+{
+  "cards": {
+    "PT-0001": {
+      "patient": {
+        "patient_id": "PT-0001",
+        "name": "Maria Alvarez",
+        "age": 78,
+        "weight_kg": 61.0,
+        "chief_complaint": "fever and new confusion since yesterday, not eating or drinking",
+        "vitals": {
+          "heart_rate": 134,
+          "systolic_bp": 96,
+          "diastolic_bp": 58,
+          "respiratory_rate": 32,
+          "spo2": 89.0,
+          "temperature_c": 39.4
+        },
+        "check_in_time": "2026-09-16T04:07:35.747580",
+        "is_returning": false,
+        "status": "escalated"
+      },
+      "escalation": {
+        "level": "immediate",
+        "findings": [
+          {
+            "severity": "critical",
+            "category": "vital",
+            "detail": "Marked tachycardia \u2014 HR 134 bpm (threshold >130)"
+          },
+          {
+            "severity": "critical",
+            "category": "vital",
+            "detail": "Severe tachypnea \u2014 RR 32 breaths/min (threshold >30)"
+          },
+          {
+            "severity": "critical",
+            "category": "vital",
+            "detail": "Significant hypoxia \u2014 SpO2 89.0 % (threshold <90)"
+          },
+          {
+            "severity": "concerning",
+            "category": "vital",
+            "detail": "Fever \u2014 Temp 39.4 \u00b0C (threshold >38.5)"
+          },
+          {
+            "severity": "concerning",
+            "category": "vital",
+            "detail": "Borderline hypotension \u2014 SBP 96 mmHg (threshold <100)"
+          },
+          {
+            "severity": "concerning",
+            "category": "symptom",
+            "detail": "Concerning symptom present: 'altered mental status'"
+          },
+          {
+            "severity": "concerning",
+            "category": "age",
+            "detail": "High-risk age group: geriatric (age 78) with a concurrent abnormal finding \u2014 blunted physiologic response can mask severity"
+          }
+        ],
+        "reasons": [
+          "ESI 2 meets the immediate-attention threshold (ESI \u2264 2)",
+          "Marked tachycardia \u2014 HR 134 bpm (threshold >130)",
+          "Severe tachypnea \u2014 RR 32 breaths/min (threshold >30)",
+          "Significant hypoxia \u2014 SpO2 89.0 % (threshold <90)"
+        ],
+        "physician_summary": {
+          "urgency_statement": "Immediate physician evaluation required: 78-year-old with sepsis physiology, hypoxia, and altered mental status.",
+          "trigger_reasons": [
+            "ESI 2 \u2014 meets immediate-attention threshold",
+            "Marked tachycardia (HR 134 bpm, >130)",
+            "Severe tachypnea (RR 32/min, >30)",
+            "Significant hypoxia (SpO2 89%, <90)"
+          ],
+          "abnormal_vitals": [
+            "HR 134 bpm (marked tachycardia)",
+            "RR 32/min (severe tachypnea)",
+            "SpO2 89% (significant hypoxia)",
+            "Temp 39.4\u00b0C (fever)",
+            "SBP 96 mmHg (borderline hypotension)"
+          ],
+          "clinical_concerns": "Elderly patient presenting with fever, new confusion, and poor oral intake now manifesting tachycardia, tachypnea, hypoxia, and borderline hypotension \u2014 a pattern highly concerning for sepsis, likely with a respiratory or urinary source, superimposed on possible dehydration and delirium. The combination of hypoxia and altered mental status raises risk for rapid decompensation, and age increases risk of atypical presentation and poor physiologic reserve. Differential includes severe pneumonia/sepsis, urosepsis, or other systemic infection with early septic shock.",
+          "recommended_actions": [
+            "Initiate sepsis protocol: obtain blood cultures x2, lactate, CBC, CMP, procalcitonin before antibiotics",
+            "Start broad-spectrum IV antibiotics within 1 hour per sepsis bundle",
+            "Administer supplemental oxygen to target SpO2 >92%; prepare for possible escalation of respiratory support",
+            "Initiate IV fluid resuscitation (consider 30 mL/kg crystalloid bolus, reassess for fluid tolerance given age)",
+            "Obtain portable chest X-ray and urinalysis/urine culture to identify infection source",
+            "Continuous cardiac and pulse oximetry monitoring; repeat vitals every 15 minutes",
+            "Assess mental status (rule out delirium vs. hypoxia-driven encephalopathy); consider CT head if no rapid improvement",
+            "Establish second large-bore IV access and consider central line/vasopressor readiness if hypotension progresses",
+            "Notify ICU/rapid response team for potential escalation of care"
+          ]
+        },
+        "system_error": null
+      },
+      "triage_result": {
+        "esi_score": 2,
+        "esi_rationale": "ESI 2 \u2014 high-risk presentation that cannot wait. The complaint describes new confusion (altered mental status) with fever in a 78-year-old, which ESI v4 lists explicitly as an ESI 2 presentation (suspected sepsis, new confusion or lethargy in the elderly). Vital signs reinforce rather than soften this: HR 134, RR 32, SpO2 89%, temp 39.4\u00b0C, and SBP 96 mmHg together meet qSOFA/SIRS criteria for sepsis with impending shock. The patient is not currently ESI 1 because there is no immediate life-saving intervention in progress \u2014 airway is intact, the patient is confused but responsive, and hypoxia is expected to correct with supplemental oxygen rather than assisted ventilation. Immediate escalation to ESI 1 is warranted if mental status declines further, SpO2 fails to rise above 92% on supplemental oxygen, or SBP falls below 90 mmHg despite fluids.",
+        "clinical_reasoning": "78-year-old geriatric patient presenting with fever, new-onset confusion since yesterday, and poor oral intake \u2014 a classic sepsis presentation in the elderly, in whom altered mental status is often the only early localizing sign. Objective data support systemic infection with organ dysfunction: temperature 39.4\u00b0C, marked tachycardia at 134 bpm, severe tachypnea at 32 breaths/min, hypoxia at 89% on room air, and borderline hypotension at 96/58 mmHg. qSOFA is positive on at least two counts (RR \u226522, altered mentation) with borderline SBP, placing this patient at high risk for progression to septic shock. The hypoxia and tachypnea raise concern for pneumonia as the source, though urinary tract infection is equally common in this age group and reduced intake suggests significant volume depletion contributing to the hypotension and tachycardia. Decreased oral intake over 24+ hours in a 61 kg elderly patient also risks acute kidney injury and electrolyte derangement. This work-up will consume far more than two resources (labs, cultures, lactate, IV fluids, IV antibiotics, chest imaging, likely admission), but resource counting is not the governing decision point here \u2014 the patient meets ESI 2 on high-risk criteria alone and must be moved to a treatment area ahead of all lower-acuity patients. Time-to-antibiotics is the key outcome driver.",
+        "recommended_interventions": [
+          "Move immediately to a monitored treatment bed \u2014 do not leave in the waiting room; notify the emergency physician and activate the sepsis/code sepsis protocol now",
+          "Apply supplemental oxygen via nasal cannula or non-rebreather, titrating to SpO2 \u226592%; escalate airway support if work of breathing worsens or saturation fails to improve",
+          "Establish two large-bore IV lines and begin balanced crystalloid resuscitation (approximately 30 mL/kg \u2248 1830 mL for 61 kg) per sepsis protocol, with close reassessment for fluid tolerance given age",
+          "Draw blood cultures x2 from separate sites BEFORE antibiotics, plus serum lactate, CBC with differential, CMP, and coagulation studies",
+          "Administer broad-spectrum IV antibiotics within 1 hour of recognition, after cultures are obtained \u2014 do not delay for imaging results",
+          "Obtain portable chest X-ray, urinalysis with culture (straight catheter specimen if unable to void), and 12-lead ECG given tachycardia",
+          "Place on continuous cardiac, pulse oximetry, and blood pressure monitoring with vital signs every 15 minutes until stabilized",
+          "Perform and document baseline neurological assessment and GCS; obtain point-of-care glucose to rule out hypoglycemia as a contributor to confusion",
+          "Initiate strict intake/output monitoring; consider indwelling catheter if hemodynamically unstable and hourly urine output tracking is required",
+          "Institute fall and delirium precautions \u2014 bed low, side rails up, frequent reorientation, call bell within reach",
+          "Contact family or caregiver for baseline mental status, medication list, advance directives, and code status clarification"
+        ],
+        "retrieval_context_used": true,
+        "is_fallback": false,
+        "extracted_symptoms": [
+          {
+            "symptom": "altered mental status",
+            "status": "present"
+          }
+        ]
+      }
+    },
+    "PT-0002": {
+      "patient": {
+        "patient_id": "PT-0002",
+        "name": "Daniel Okafor",
+        "age": 62,
+        "weight_kg": 94.0,
+        "chief_complaint": "crushing chest pain radiating to jaw and left arm, diaphoretic, started 40 minutes ago",
+        "vitals": {
+          "heart_rate": 112,
+          "systolic_bp": 88,
+          "diastolic_bp": 54,
+          "respiratory_rate": 16,
+          "spo2": 93.0,
+          "temperature_c": 36.8
+        },
+        "check_in_time": "2026-09-16T04:08:12.786252",
+        "is_returning": false,
+        "status": "escalated"
+      },
+      "escalation": {
+        "level": "immediate",
+        "findings": [
+          {
+            "severity": "concerning",
+            "category": "vital",
+            "detail": "Tachycardia \u2014 HR 112 bpm (threshold >100)"
+          },
+          {
+            "severity": "concerning",
+            "category": "vital",
+            "detail": "Borderline oxygenation \u2014 SpO2 93.0 % (threshold <94)"
+          },
+          {
+            "severity": "critical",
+            "category": "vital",
+            "detail": "Hypotension \u2014 SBP 88 mmHg (threshold <90)"
+          },
+          {
+            "severity": "concerning",
+            "category": "symptom",
+            "detail": "Concerning symptom present: 'chest pain'"
+          }
+        ],
+        "reasons": [
+          "ESI 1 meets the immediate-attention threshold (ESI \u2264 2)",
+          "Hypotension \u2014 SBP 88 mmHg (threshold <90)"
+        ],
+        "physician_summary": {
+          "urgency_statement": "IMMEDIATE ATTENTION REQUIRED: ESI-1 patient with suspected acute coronary syndrome and hemodynamic compromise.",
+          "trigger_reasons": [
+            "ESI level 1 meets immediate-attention threshold (ESI \u22642)",
+            "Hypotension \u2014 SBP 88 mmHg (threshold <90)"
+          ],
+          "abnormal_vitals": [
+            "Tachycardia \u2014 HR 112 bpm (threshold >100)",
+            "Hypotension \u2014 BP 88/54 mmHg (SBP threshold <90)",
+            "Borderline oxygenation \u2014 SpO2 93.0% (threshold <94)"
+          ],
+          "clinical_concerns": "62-year-old presenting with crushing chest pain radiating to jaw and left arm, diaphoresis, onset 40 minutes ago \u2014 classic presentation for acute myocardial infarction. Concurrent hypotension (88/54) and tachycardia (112 bpm) raise concern for cardiogenic shock or evolving hemodynamic instability. Borderline hypoxemia (SpO2 93%) may reflect pulmonary congestion from cardiac dysfunction. This constellation requires immediate cardiac workup and hemodynamic stabilization to prevent deterioration or cardiac arrest.",
+          "recommended_actions": [
+            "Obtain STAT 12-lead ECG and activate cardiac catheterization lab if STEMI confirmed",
+            "Draw STAT troponin, CBC, BMP, coagulation panel, and type & screen",
+            "Establish two large-bore IVs and begin cautious IV fluid bolus given hypotension",
+            "Apply supplemental oxygen to maintain SpO2 \u226594%",
+            "Administer aspirin 325 mg chewed if no contraindication; hold nitrates given hypotension",
+            "Continuous cardiac and BP monitoring; prepare for possible vasopressor support",
+            "Consult cardiology immediately for emergent evaluation",
+            "Reassess for signs of cardiogenic shock (mental status, urine output, skin perfusion)"
+          ]
+        },
+        "system_error": null
+      },
+      "triage_result": {
+        "esi_score": 1,
+        "esi_rationale": "ESI 1 \u2014 the patient requires immediate life-saving intervention. Crushing chest pain with radiation to jaw and left arm plus diaphoresis, onset 40 minutes ago, is a high-probability acute coronary syndrome, and it is accompanied by critical hypotension (SBP 88 mmHg, below the <90 critical threshold) with compensatory tachycardia (HR 112) and borderline oxygenation (SpO2 93%). Hemodynamic instability in the setting of an evolving infarct represents cardiogenic shock physiology requiring immediate stabilization \u2014 IV access and fluid/vasopressor decision-making, continuous monitoring, and emergent cath lab activation \u2014 not merely 'should not wait' (ESI 2) placement. Decision Point A is satisfied, so the algorithm stops before resource counting or the Decision Point D upgrade pathway.",
+        "clinical_reasoning": "62-year-old male, 94 kg, with a 40-minute history of crushing substernal chest pain radiating to the jaw and left arm with diaphoresis \u2014 a classic high-risk ACS presentation well inside the reperfusion window. The distinguishing feature is hemodynamic compromise: SBP 88/54 mmHg with HR 112 and SpO2 93%. In an acute MI this pattern suggests either significant left ventricular dysfunction with early cardiogenic shock or an inferior/right-ventricular infarct with preload dependence \u2014 a critical distinction, since nitrates would be harmful in the latter and in any hypotensive ACS patient. Narrow pulse pressure (34 mmHg) and diaphoresis support poor forward flow rather than a spurious reading. Time-critical: myocardial salvage is measured in minutes, and shock physiology dramatically raises mortality. The patient must bypass triage and go directly to a resuscitation bay. Anticipated needs include 12-lead ECG within minutes, dual large-bore IV access, cardiac biomarkers and full labs, portable chest imaging, bedside echo to assess RV involvement and effusion, cautious fluid challenge, and STEMI/cath lab activation. Airway is currently intact and mentation is not described as altered, but both require continuous reassessment given the borderline SpO2 and hypotension.",
+        "recommended_interventions": [
+          "Move immediately to a resuscitation bay \u2014 do not place in the waiting area; notify attending physician and activate STEMI/cardiac alert team",
+          "Obtain a 12-lead ECG within 5 minutes of arrival and have the physician interpret it at the bedside; repeat serially if initial ECG is non-diagnostic",
+          "Place patient on continuous cardiac monitoring, continuous pulse oximetry, and automated BP cycling every 5 minutes; apply defibrillator pads given arrhythmia and arrest risk",
+          "Establish two large-bore IVs (18 G or larger) and draw troponin, CBC, CMP/electrolytes, coagulation studies, and type and screen",
+          "Recheck blood pressure manually in both arms and confirm hypotension; assess for pulse-pressure narrowing and signs of poor perfusion (skin, capillary refill, mentation)",
+          "Withhold nitroglycerin and other preload-reducing agents while SBP is 88 mmHg \u2014 flag the hypotension to the physician before any vasodilator is given",
+          "Administer supplemental oxygen titrated to SpO2 \u226594%, starting with 2\u20134 L/min nasal cannula, and reassess response",
+          "Anticipate and prepare a cautious IV crystalloid bolus (250\u2013500 mL) per physician order for possible RV infarct, with reassessment for pulmonary congestion after each bolus; have vasopressors available",
+          "Prepare aspirin 324 mg chewable per physician order if no contraindication; confirm antiplatelet/anticoagulant history and allergies",
+          "Obtain bedside echocardiogram and portable chest radiograph to evaluate RV function, wall motion, effusion, and pulmonary edema",
+          "Keep patient NPO, maintain strict bed rest, and place on a cardiac-arrest-ready setup; ensure airway and suction equipment are immediately at hand",
+          "Document precise symptom onset time (40 minutes prior to arrival) for reperfusion timing and reassess pain score and vital signs every 5 minutes"
+        ],
+        "retrieval_context_used": true,
+        "is_fallback": false,
+        "extracted_symptoms": [
+          {
+            "symptom": "chest pain",
+            "status": "present"
+          }
+        ]
+      }
+    },
+    "PT-0003": {
+      "patient": {
+        "patient_id": "PT-0003",
+        "name": "Grace Lindqvist",
+        "age": 34,
+        "weight_kg": 68.0,
+        "chief_complaint": "sudden severe headache while lifting, worst of my life, photophobia",
+        "vitals": {
+          "heart_rate": 98,
+          "systolic_bp": 168,
+          "diastolic_bp": 96,
+          "respiratory_rate": 16,
+          "spo2": 98.0,
+          "temperature_c": 36.8
+        },
+        "check_in_time": "2026-09-16T04:08:46.781998",
+        "is_returning": false,
+        "status": "escalated"
+      },
+      "escalation": {
+        "level": "immediate",
+        "findings": [
+          {
+            "severity": "concerning",
+            "category": "symptom",
+            "detail": "Concerning symptom present: 'severe headache'"
+          }
+        ],
+        "reasons": [
+          "ESI 2 meets the immediate-attention threshold (ESI \u2264 2)"
+        ],
+        "physician_summary": {
+          "urgency_statement": "Immediate physician evaluation required \u2014 thunderclap headache with red-flag features, concerning for subarachnoid hemorrhage.",
+          "trigger_reasons": [
+            "ESI 2 acuity meets immediate-attention threshold (ESI \u2264 2)",
+            "Chief complaint of sudden-onset, worst-of-life headache with exertional trigger and photophobia \u2014 high-risk history for SAH"
+          ],
+          "abnormal_vitals": [
+            "BP 168/96 mmHg \u2014 elevated, hypertensive urgency range"
+          ],
+          "clinical_concerns": "34-year-old presenting with sudden, severe headache described as the worst of their life, triggered by lifting and accompanied by photophobia. This symptom pattern is a classic red flag for subarachnoid hemorrhage or other acute intracranial pathology despite otherwise reassuring vitals aside from mild hypertension. Absence of fever and normal SpO2/HR/RR do not rule out serious intracranial cause. Rapid evaluation is critical given the narrow therapeutic window for diagnosis and intervention in SAH.",
+          "recommended_actions": [
+            "Obtain immediate non-contrast CT head; if negative and clinical suspicion remains, proceed to CT angiography or lumbar puncture to assess for xanthochromia",
+            "Establish IV access and continuous cardiac/BP monitoring",
+            "Control BP cautiously if needed per neuro-protective protocol, avoiding precipitous drops",
+            "Perform focused neurologic exam including pupillary response, Glasgow Coma Scale, and signs of meningismus",
+            "Administer analgesia and antiemetics as needed while maintaining neuro exam validity",
+            "Consult neurology/neurosurgery early if imaging reveals hemorrhage or aneurysm",
+            "Reassess vitals and neuro status frequently pending imaging results"
+          ]
+        },
+        "system_error": null
+      },
+      "triage_result": {
+        "esi_score": 2,
+        "esi_rationale": "ESI 2 by Decision Point B: this is a high-risk situation. Sudden-onset, maximal-intensity (\"worst of my life\") headache with exertional onset and photophobia is a classic thunderclap presentation concerning for subarachnoid hemorrhage \u2014 a time-dependent, potentially catastrophic diagnosis. The patient is also in severe pain. Although all vital signs are within threshold ranges and the patient currently appears stable, ESI 2 is driven by trajectory and worst-case risk, not present appearance. This patient should not wait in the waiting room.",
+        "clinical_reasoning": "34-year-old presenting with abrupt, severe headache that began during lifting (Valsalva/exertional trigger), described as the worst of his/her life, accompanied by photophobia. This constellation is the textbook thunderclap headache and must be assumed to be aneurysmal subarachnoid hemorrhage until proven otherwise; differential also includes cervical or vertebral artery dissection, cerebral venous sinus thrombosis, reversible cerebral vasoconstriction syndrome, and pituitary apoplexy. Photophobia suggests meningeal irritation, consistent with subarachnoid blood.\n\nVital signs are reassuring on the surface \u2014 HR 98, RR 16, SpO2 98%, temp 36.8\u00b0C \u2014 and none cross concerning thresholds. BP 168/96 is below the 180/110 concerning cut-offs but is elevated for a 34-year-old and may reflect pain, sympathetic surge, or a Cushing-type response to rising intracranial pressure; it warrants serial monitoring rather than dismissal. Normal vitals do not lower the acuity here: a substantial proportion of SAH patients are hemodynamically normal at first contact and deteriorate abruptly with rebleeding, which carries very high mortality.\n\nNo altered mental status, focal deficit, seizure, or syncope is reported, so ESI 1 criteria (need for immediate life-saving intervention) are not met at this time. However, the resource count is irrelevant to the assignment \u2014 Decision Point B stops the algorithm at ESI 2 before resource prediction. The anticipated work-up (non-contrast head CT emergently, possible lumbar puncture or CTA, IV access, labs, analgesia, neurosurgical consult) would independently exceed two resources.\n\nKey risk: neurologic deterioration can be sudden. This patient requires continuous observation in a monitored treatment space, not a waiting area.",
+        "recommended_interventions": [
+          "Place immediately in a monitored treatment bed \u2014 do not return to waiting room; notify the emergency physician now",
+          "Expedite non-contrast head CT as the highest priority; flag as possible subarachnoid hemorrhage so imaging is not delayed",
+          "Establish two large-bore IV lines and draw CBC, chemistry, coagulation studies, and type and screen",
+          "Apply continuous cardiac monitoring, pulse oximetry, and automated BP cycling every 5\u201315 minutes",
+          "Perform and document a baseline neurologic assessment (GCS, pupils, cranial nerves, limb strength) and repeat at least every 15 minutes; escalate immediately for any decline in GCS, new focal deficit, vomiting, or seizure",
+          "Keep head of bed elevated to approximately 30 degrees and maintain a quiet, dimly lit environment for photophobia",
+          "Give analgesia per protocol with the physician \u2014 avoid antiplatelet agents such as aspirin or NSAIDs until hemorrhage is excluded; add an antiemetic for nausea/vomiting",
+          "Keep patient NPO pending imaging and possible lumbar puncture or procedural intervention",
+          "Report the elevated BP (168/96) to the physician and clarify treatment parameters, as aggressive lowering may be desired to reduce rebleeding risk once SAH is suspected",
+          "Anticipate and pre-alert neurosurgery/neurology consultation and prepare for possible lumbar puncture if CT is non-diagnostic"
+        ],
+        "retrieval_context_used": true,
+        "is_fallback": false,
+        "extracted_symptoms": [
+          {
+            "symptom": "severe headache",
+            "status": "present"
+          }
+        ]
+      }
+    },
+    "PT-0004": {
+      "patient": {
+        "patient_id": "PT-0004",
+        "name": "Priya Raman",
+        "age": 58,
+        "weight_kg": 70.0,
+        "chief_complaint": "prior episode of syncope last year, today has chest pressure with exertion",
+        "vitals": {
+          "heart_rate": 88,
+          "systolic_bp": 186,
+          "diastolic_bp": 104,
+          "respiratory_rate": 16,
+          "spo2": 98.0,
+          "temperature_c": 36.8
+        },
+        "check_in_time": "2026-09-16T04:09:15.204004",
+        "is_returning": false,
+        "status": "escalated"
+      },
+      "escalation": {
+        "level": "immediate",
+        "findings": [
+          {
+            "severity": "concerning",
+            "category": "vital",
+            "detail": "Hypertensive urgency \u2014 SBP 186 mmHg (threshold >180)"
+          },
+          {
+            "severity": "concerning",
+            "category": "symptom",
+            "detail": "Concerning symptom present: 'chest pressure'"
+          }
+        ],
+        "reasons": [
+          "ESI 2 meets the immediate-attention threshold (ESI \u2264 2)"
+        ],
+        "physician_summary": {
+          "urgency_statement": "ESI-2 patient with hypertensive urgency and exertional chest pressure \u2014 requires immediate physician evaluation.",
+          "trigger_reasons": [
+            "ESI acuity level 2 meets immediate-attention threshold",
+            "Severe hypertension with systolic BP 186 mmHg",
+            "Exertional chest pressure with history of syncope"
+          ],
+          "abnormal_vitals": [
+            "BP 186/104 mmHg \u2014 hypertensive urgency (SBP >180)"
+          ],
+          "clinical_concerns": "58-year-old presenting with exertional chest pressure and a history of syncope within the past year, now found to have severely elevated blood pressure (186/104 mmHg) meeting criteria for hypertensive urgency. The combination of chest pressure with exertion and prior syncope raises concern for underlying coronary artery disease, unstable angina, or a cardiac arrhythmic process contributing to both the syncopal event and current symptoms. Hypertensive urgency itself increases myocardial oxygen demand and may be precipitating or exacerbating the chest pressure. Immediate cardiac risk stratification is warranted given the potential for acute coronary syndrome or a cardiogenic cause of the prior syncope.",
+          "recommended_actions": [
+            "Obtain 12-lead ECG immediately to assess for ischemia, arrhythmia, or conduction abnormality",
+            "Initiate continuous cardiac monitoring and pulse oximetry",
+            "Draw troponin and repeat in serial fashion per ACS protocol",
+            "Establish IV access and send basic metabolic panel, CBC, and BNP",
+            "Administer antihypertensive therapy per protocol to gradually reduce BP while avoiding precipitous drops",
+            "Perform focused cardiac and pulmonary exam; assess for signs of heart failure or aortic pathology",
+            "Consider portable chest X-ray to evaluate for pulmonary edema or mediastinal widening",
+            "Obtain detailed history of syncope episode including triggers, prodrome, and associated symptoms",
+            "Consult cardiology given chest pressure with exertion, syncope history, and hypertensive urgency",
+            "Reassess vitals frequently and escalate care if BP remains uncontrolled or symptoms worsen"
+          ]
+        },
+        "system_error": null
+      },
+      "triage_result": {
+        "esi_score": 2,
+        "esi_rationale": "ESI 2 \u2014 high-risk presentation. A 58-year-old with exertional chest pressure is a classic anginal/acute coronary syndrome presentation until proven otherwise, and the clinical situation carries a credible threat to life or organ function if evaluation is delayed. He is not currently in extremis requiring an immediate life-saving intervention (Decision Point A negative \u2014 airway patent, SpO2 98%, HR 88, perfusing pressure), so ESI 1 does not apply. Decision Point B is answered yes on the high-risk criterion, so the algorithm stops before resource counting. Reinforcing this, the work-up would consume well more than two resources (ECG plus serial troponins, labs, IV access, cardiac monitoring, possible imaging and cardiology consult), and the measured hypertensive urgency (SBP 186, DBP 104) is an out-of-range vital sign that per Decision Point D supports upgrading rather than holding at ESI 3. This patient should not wait in the lobby.",
+        "clinical_reasoning": "58-year-old male, 70 kg, presenting with chest pressure provoked by exertion. The exertional character is the key discriminator: symptoms reproduced by increased myocardial oxygen demand and the substernal 'pressure' quality are the textbook description of angina, and in a 58-year-old this places acute coronary syndrome and unstable angina at the top of the differential. The documented prior syncopal episode last year is a historical finding, not part of today's presentation, but it is not clinically irrelevant \u2014 syncope in combination with exertional chest symptoms raises the possibility of a structural or outflow-obstruction cause such as severe aortic stenosis or hypertrophic cardiomyopathy, as well as an arrhythmic aetiology, and should be flagged for the treating clinician rather than dismissed. Vital signs are notable for a blood pressure of 186/104 mmHg, meeting the concerning threshold for systolic hypertension with a diastolic also above the normal range. Elevated afterload increases myocardial oxygen demand and may be both a contributor to and a consequence of ongoing ischaemia; it also has implications for anticoagulation and thrombolytic safety should ACS be confirmed. The remaining vitals are reassuring \u2014 HR 88 without tachycardia, RR 16, SpO2 98% on room air, temperature 36.8\u00b0C \u2014 indicating he is currently compensated and not in cardiogenic shock or respiratory failure. That stability, however, is expected in early ACS and must not be mistaken for low acuity; an occlusive coronary lesion can decompensate abruptly into arrhythmia or arrest. Aortic dissection also warrants consideration given the markedly elevated pressure, and bilateral blood pressures should be obtained. The clinical imperative is immediate ECG acquisition to identify ST-elevation, continuous cardiac monitoring for arrhythmia, and rapid physician evaluation. This patient requires a monitored bed now, not a waiting-room seat.",
+        "recommended_interventions": [
+          "Obtain 12-lead ECG within 10 minutes of arrival and hand directly to the emergency physician for immediate interpretation; repeat if symptoms change or recur",
+          "Place patient in a monitored treatment bed \u2014 do not return to waiting room",
+          "Initiate continuous cardiac telemetry, pulse oximetry, and automated BP cycling every 5\u201315 minutes",
+          "Establish IV access with two large-bore cannulae and draw baseline labs including high-sensitivity troponin, CBC, electrolytes, renal function, and coagulation studies; plan serial troponin",
+          "Administer aspirin 324 mg chewable per chest pain protocol unless contraindicated (allergy, active bleeding) \u2014 confirm with physician",
+          "Assess and document pain using a 0\u201310 scale plus character, radiation, provoking and relieving factors, and time of onset; reassess after any intervention",
+          "Withhold supplemental oxygen while SpO2 remains \u226594% on room air; titrate only if desaturation occurs",
+          "Measure blood pressure in both arms and check bilateral radial pulses to screen for aortic dissection before any antiplatelet or anticoagulant escalation",
+          "Notify the emergency physician immediately of exertional chest pressure with hypertensive urgency and prior syncope; escalate for possible cardiology consultation",
+          "Obtain focused history on the prior syncopal episode \u2014 exertional versus positional, prodrome, witnessed duration \u2014 and auscultate for murmurs suggestive of aortic stenosis or HCM",
+          "Keep patient at rest on bed rest with head of bed elevated; nothing by mouth pending physician evaluation",
+          "Ensure defibrillator and resuscitation equipment are immediately available at the bedside",
+          "Reassess vital signs and symptom status at minimum every 15 minutes and escalate immediately for recurrent pain, dysrhythmia, hypotension, or altered mental status"
+        ],
+        "retrieval_context_used": true,
+        "is_fallback": false,
+        "extracted_symptoms": [
+          {
+            "symptom": "syncope",
+            "status": "historical"
+          },
+          {
+            "symptom": "chest pressure",
+            "status": "present"
+          }
+        ]
+      }
+    },
+    "PT-0005": {
+      "patient": {
+        "patient_id": "PT-0005",
+        "name": "Tom Becker",
+        "age": 35,
+        "weight_kg": 81.0,
+        "chief_complaint": "mild abdominal pain for 3 days, eating and drinking normally, no vomiting",
+        "vitals": {
+          "heart_rate": 76,
+          "systolic_bp": 124,
+          "diastolic_bp": 78,
+          "respiratory_rate": 16,
+          "spo2": 98.0,
+          "temperature_c": 36.8
+        },
+        "check_in_time": "2026-09-16T04:09:47.392621",
+        "is_returning": false,
+        "status": "triaged"
+      },
+      "escalation": {
+        "level": "none",
+        "findings": [],
+        "reasons": [],
+        "physician_summary": null,
+        "system_error": null
+      },
+      "triage_result": {
+        "esi_score": 4,
+        "esi_rationale": "Not ESI 1 (no immediate life-saving intervention needed), not ESI 2 (no high-risk features, alert and oriented, pain described as mild, no severe distress). At Decision Point C, this well-appearing 35-year-old with 3 days of mild abdominal pain, normal oral intake, no vomiting, and entirely normal vital signs is anticipated to need approximately one resource \u2014 basic laboratory work (e.g., CBC/CMP, urinalysis) \u2014 making ESI 4 the most accurate assignment. Decision Point D does not apply as all vital signs are within range.",
+        "clinical_reasoning": "35-year-old, 81 kg, presenting with 3 days of mild, non-progressive abdominal pain. Reassuring history: tolerating food and fluids normally and no vomiting, which argues against obstruction, significant gastroenteritis, or a surgical abdomen with peritoneal irritation. All measured vital signs are normal (HR 76, BP 124/78, RR 16, SpO2 98%, T 36.8\u00b0C) \u2014 no tachycardia, no hypotension, no fever to suggest sepsis or intra-abdominal infection. No critical or concerning vocabulary symptoms were reported; the pain is explicitly characterized as mild rather than severe, and there is no vomiting, so no ESI 2 upgrade criteria are met. The subacute 3-day course with preserved intake in a hemodynamically normal patient predicts a limited work-up: screening labs with or without urinalysis, and likely no imaging or IV therapy. If the abdominal exam at bedside reveals focal peritoneal signs, a rising pain score, or if pregnancy is a consideration requiring additional testing and imaging, the resource count would rise and the patient should be re-triaged to ESI 3.",
+        "recommended_interventions": [
+          "Obtain focused abdominal assessment including palpation for localized tenderness, guarding, rebound, and bowel sounds; document pain location, character, and 0-10 score",
+          "Collect urine specimen for urinalysis; obtain urine or serum pregnancy test if patient is of childbearing potential",
+          "Draw baseline labs per provider order (CBC, CMP, lipase) using a single venipuncture to limit resource use",
+          "Keep patient NPO except sips pending provider evaluation in case imaging or surgical consult becomes necessary",
+          "Offer oral analgesia per protocol for mild pain and reassess pain score within 30-60 minutes",
+          "Reassess vital signs at least every 2 hours in the waiting area and re-triage immediately if pain escalates, fever develops, vomiting begins, or tachycardia/hypotension appear",
+          "Instruct patient to notify triage nurse promptly of any worsening pain, inability to keep fluids down, or new vomiting"
+        ],
+        "retrieval_context_used": true,
+        "is_fallback": false,
+        "extracted_symptoms": []
+      }
+    },
+    "PT-0006": {
+      "patient": {
+        "patient_id": "PT-0006",
+        "name": "Sam Whitfield",
+        "age": 44,
+        "weight_kg": 77.0,
+        "chief_complaint": "laceration to left forearm from kitchen knife, bleeding controlled with pressure",
+        "vitals": {
+          "heart_rate": 92,
+          "systolic_bp": 124,
+          "diastolic_bp": 78,
+          "respiratory_rate": 16,
+          "spo2": 98.0,
+          "temperature_c": 36.8
+        },
+        "check_in_time": "2026-09-16T04:10:03.666450",
+        "is_returning": false,
+        "status": "triaged"
+      },
+      "escalation": {
+        "level": "none",
+        "findings": [],
+        "reasons": [],
+        "physician_summary": null,
+        "system_error": null
+      },
+      "triage_result": {
+        "esi_score": 4,
+        "esi_rationale": "Patient is hemodynamically stable with all vital signs within normal range and requires exactly one anticipated resource \u2014 laceration repair (wound closure with sutures/staples/adhesive). Per ESI Decision Point C, a single anticipated resource yields ESI 4. Simple laceration requiring repair is an explicit ESI 4 exemplar. No life-saving intervention needed (Decision Point A negative), no high-risk features, altered mentation, or severe pain/distress to meet ESI 2 criteria, and Decision Point D does not apply because no vital signs are out of range.",
+        "clinical_reasoning": "44-year-old adult presenting with an isolated traumatic laceration to the left forearm sustained from a kitchen knife. Bleeding is reported as controlled with direct pressure, indicating no ongoing hemorrhage and no need for emergent hemostatic or resuscitative measures. Vital signs are entirely reassuring \u2014 HR 92, BP 124/78, RR 16, SpO2 98% on room air, temp 36.8\u00b0C \u2014 with no evidence of hypovolemia, shock, or compensatory tachycardia, supporting the account of controlled blood loss. The chief complaint contains no critical or concerning vocabulary symptoms; the bleeding described is explicitly controlled and localized rather than severe. Anticipated ED course is wound exploration, irrigation, and simple closure, which counts as a single resource; local anesthetic, wound cleansing, dressing, and tetanus prophylaxis are not counted as separate ESI resources. Attention should be paid at bedside to depth of injury, given the forearm's flexor tendon, neurovascular, and volar structure proximity \u2014 if examination reveals tendon involvement, arterial injury, retained foreign body requiring imaging, or need for specialty (hand surgery) consultation, the resource count would rise to two or more and the patient should be re-triaged to ESI 3.",
+        "recommended_interventions": [
+          "Maintain direct pressure and apply a clean sterile pressure dressing to the left forearm; elevate the extremity above heart level",
+          "Assess and document distal neurovascular status \u2014 radial pulse, capillary refill, sensation in median/ulnar/radial distributions, and finger flexion/extension strength \u2014 before and after dressing",
+          "Inspect wound for length, depth, contamination, retained glass or metal fragments, and visible tendon or fat; escalate to ESI 3 and notify provider if deep structure involvement is suspected",
+          "Verify tetanus immunization status and administer Td/Tdap booster per protocol if last dose was more than 5 years ago for a contaminated wound or 10 years for a clean wound",
+          "Irrigate and cleanse wound with normal saline per protocol in preparation for provider evaluation and laceration repair",
+          "Assess and document pain score; offer oral analgesia per standing order and reassess response",
+          "Obtain injury mechanism details including knife cleanliness, time since injury, handedness, occupation, and any anticoagulant use or bleeding disorder history",
+          "Reassess vital signs and dressing for bleed-through every 30-60 minutes while awaiting provider evaluation",
+          "Keep patient NPO status unnecessary; reassure and instruct patient to report numbness, tingling, increasing pain, or renewed bleeding immediately"
+        ],
+        "retrieval_context_used": true,
+        "is_fallback": false,
+        "extracted_symptoms": []
+      }
+    },
+    "PT-0007": {
+      "patient": {
+        "patient_id": "PT-0007",
+        "name": "Nina Castellanos",
+        "age": 29,
+        "weight_kg": 64.0,
+        "chief_complaint": "denies chest pain, here for a medication refill and blood pressure check",
+        "vitals": {
+          "heart_rate": 76,
+          "systolic_bp": 124,
+          "diastolic_bp": 78,
+          "respiratory_rate": 16,
+          "spo2": 98.0,
+          "temperature_c": 36.8
+        },
+        "check_in_time": "2026-09-16T04:10:19.759823",
+        "is_returning": false,
+        "status": "triaged"
+      },
+      "escalation": {
+        "level": "none",
+        "findings": [],
+        "reasons": [],
+        "physician_summary": null,
+        "system_error": null
+      },
+      "triage_result": {
+        "esi_score": 5,
+        "esi_rationale": "ESI 5 \u2014 Non-Urgent. Patient is a 29-year-old presenting for a medication refill and blood pressure check with explicitly denied chest pain. All vital signs are within normal adult ranges (HR 76, BP 124/78, RR 16, SpO2 98%, Temp 36.8\u00b0C). No life-saving intervention is required (not ESI 1), no high-risk features, altered mental status, or severe pain/distress are present (not ESI 2), and the anticipated work-up requires no resources beyond examination and a blood pressure measurement \u2014 vital signs and physical exam are not counted as resources under ESI v4. Per Decision Point C, zero resources yields ESI 5.",
+        "clinical_reasoning": "Chief complaint is administrative/routine: medication refill plus a blood pressure recheck. The complaint explicitly documents 'denies chest pain' \u2014 a negative finding that is clinically meaningful and must not be treated as a positive chest pain presentation. There are no measured vital sign abnormalities; the blood pressure of 124/78 mmHg is normotensive, which answers the patient's stated reason for the visit and provides no basis for upgrade under Decision Point D (which applies only to patients otherwise scored ESI 3). The patient is young, hemodynamically stable, well-perfused, and in no apparent distress. Anticipated care is a focused history, review of the current antihypertensive or other maintenance medication, confirmation of adherence and tolerance, a blood pressure reading, and issuance of a prescription \u2014 all of which fall within examination-level care. Should the history uncover new symptoms, uncontrolled readings at home, or medication side effects, the assignment should be revisited and resource needs recounted.",
+        "recommended_interventions": [
+          "Document the explicit denial of chest pain in the triage note as a negative finding, distinct from a chest pain presentation",
+          "Obtain and record a repeat manual blood pressure after 5 minutes of seated rest to confirm the 124/78 mmHg reading and address the patient's stated reason for visit",
+          "Verify the specific medication requiring refill, the prescribing clinician, last fill date, remaining supply, and adherence pattern",
+          "Screen briefly for interval symptoms \u2014 chest discomfort, dyspnea, headache, visual change, palpitations, edema, dizziness \u2014 and escalate triage level if any are newly reported",
+          "Review for medication side effects, drug interactions, and any new over-the-counter or herbal agents",
+          "Confirm allergy list and current medication reconciliation in the record",
+          "Provide home blood pressure monitoring education and instruct the patient to log readings",
+          "Route to fast-track or a low-acuity treatment area; no IV access, laboratory studies, or imaging indicated at this time",
+          "Arrange or confirm primary care follow-up for ongoing prescription management to reduce reliance on the emergency department for refills",
+          "Give clear return precautions for chest pain, shortness of breath, severe headache, or focal neurologic symptoms prior to discharge"
+        ],
+        "retrieval_context_used": true,
+        "is_fallback": false,
+        "extracted_symptoms": [
+          {
+            "symptom": "chest pain",
+            "status": "denied"
+          }
+        ]
+      }
+    },
+    "PT-0008": {
+      "patient": {
+        "patient_id": "PT-0008",
+        "name": "Alice Nguyen",
+        "age": 25,
+        "weight_kg": 59.0,
+        "chief_complaint": "stubbed toe on bedframe this morning, sore but weight bearing",
+        "vitals": {
+          "heart_rate": 76,
+          "systolic_bp": 124,
+          "diastolic_bp": 78,
+          "respiratory_rate": 16,
+          "spo2": 98.0,
+          "temperature_c": 36.8
+        },
+        "check_in_time": "2026-09-16T04:10:34.696422",
+        "is_returning": false,
+        "status": "triaged"
+      },
+      "escalation": {
+        "level": "none",
+        "findings": [],
+        "reasons": [],
+        "physician_summary": null,
+        "system_error": null
+      },
+      "triage_result": {
+        "esi_score": 4,
+        "esi_rationale": "Patient is a well-appearing 25-year-old with entirely normal vital signs and an isolated minor extremity injury. No life-saving intervention required (not ESI 1), no high-risk features, altered mental status, or severe pain/distress (not ESI 2). At Decision Point C, the anticipated work-up consists of a single resource \u2014 plain radiograph of the toe/foot to exclude fracture. Simple wound care, buddy taping, and oral analgesia are not counted as resources under ESI v4. Exactly one resource yields ESI 4. Decision Point D does not apply as all vital signs are within normal range.",
+        "clinical_reasoning": "25-year-old presenting after blunt trauma to the toe from striking a bedframe this morning. The patient is ambulatory and weight bearing, which is a reassuring finding that argues against significant fracture or dislocation and satisfies low-risk clinical decision criteria for extremity injury. Pain is described as soreness rather than severe. Vital signs are entirely normal (HR 76, BP 124/78, RR 16, SpO2 98%, T 36.8\\u00b0C) with no measured out-of-range findings, indicating hemodynamic stability and no systemic involvement. The chief complaint contains no vocabulary symptoms from the critical or concerning lists. The only anticipated diagnostic need is a single plain film to rule out a phalangeal fracture; any subsequent management (buddy taping, footwear advice, oral analgesia) falls outside the ESI resource definition. Patient can safely wait for care. Red flags to monitor while waiting: worsening pain out of proportion, deformity, nail bed injury or subungual hematoma, open wound, loss of sensation, or inability to bear weight on re-evaluation.",
+        "recommended_interventions": [
+          "Perform focused musculoskeletal exam of the affected toe and foot: inspect for deformity, rotational malalignment, open wounds, nail bed injury, and subungual hematoma",
+          "Assess and document neurovascular status distal to the injury \\u2014 capillary refill, sensation, and pedal pulses",
+          "Obtain and document a pain score; offer oral analgesia (acetaminophen or NSAID) per standing order if no contraindication",
+          "Apply ice pack intermittently (20 minutes on/off) with a barrier to protect skin, and elevate the foot while waiting",
+          "Anticipate and facilitate plain radiograph of the toe/foot to exclude phalangeal fracture",
+          "Confirm tetanus immunization status, particularly if any skin breach is identified",
+          "Provide buddy taping and rigid-soled or open-toe footwear guidance per provider order after imaging",
+          "Instruct patient to notify triage staff immediately if pain escalates significantly, the toe becomes numb or discolored, or they can no longer bear weight"
+        ],
+        "retrieval_context_used": true,
+        "is_fallback": false,
+        "extracted_symptoms": []
+      }
+    }
+  }
+}

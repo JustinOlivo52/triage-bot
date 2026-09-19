@@ -1,8 +1,8 @@
 """
-memory/patient_store.py — Persistent patient queue with unique ID tracking.
+memory/patient_store.py — Patient queue with unique ID tracking.
 
-Stores all PatientCard records to a JSON file on disk so the queue survives
-app restarts and supports returning patient detection across sessions.
+Storage is pluggable (see memory/backends.py): a durable file for local use, or
+per-session memory for the public demo. The store itself does not care which.
 
 Storage format:
     {
@@ -17,88 +17,77 @@ Storage format:
 import json
 import logging
 from pathlib import Path
+from typing import Iterable, MutableMapping
 
-from config import BASE_DIR, PATIENT_ID_PREFIX
+from config import BASE_DIR, PATIENT_ID_PREFIX, SEED_COHORT
+from memory.backends import DictBackend, FileBackend, StorageBackend, empty_store
 from models import Patient, PatientCard, TriageStatus
 
 logger = logging.getLogger(__name__)
 
 STORE_PATH: Path = BASE_DIR / "memory" / "patient_store.json"
 
-_EMPTY_STORE: dict = {"id_counter": 0, "cards": {}}
-
-
-# ─── PatientStore Class ───────────────────────────────────────────────────────
 
 class PatientStore:
     """
-    File-backed patient queue. Reads and writes to JSON on every operation
-    so state is never lost between Streamlit reruns or app restarts.
+    Patient queue over a storage backend.
+
+    Reads are cached for the life of the instance and invalidated on write. The
+    previous version hit the backend on every method call, which meant a single
+    Streamlit render performed six full reads and five complete
+    deserialisations of every card in the queue.
     """
 
-    def __init__(self, store_path: Path = STORE_PATH) -> None:
-        self.store_path = store_path
-        self._ensure_store()
+    def __init__(self, backend: StorageBackend) -> None:
+        self._backend = backend
+        self._cache: dict | None = None
 
     # ── Internal I/O ─────────────────────────────────────────────────────────
 
-    def _ensure_store(self) -> None:
-        """Create the store file if it does not exist."""
-        self.store_path.parent.mkdir(parents=True, exist_ok=True)
-        if not self.store_path.exists():
-            self._write(_EMPTY_STORE.copy())
-            logger.info("Patient store initialised at %s", self.store_path)
-
     def _read(self) -> dict:
-        """Load the full store dict from disk."""
-        try:
-            with open(self.store_path, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except (json.JSONDecodeError, OSError) as e:
-            logger.error("Failed to read patient store: %s — resetting", e)
-            return _EMPTY_STORE.copy()
+        if self._cache is None:
+            self._cache = self._backend.read()
+        return self._cache
 
     def _write(self, data: dict) -> None:
-        """Write the full store dict to disk."""
-        with open(self.store_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2, default=str)
+        self._backend.write(data)
+        self._cache = data
+
+    def refresh(self) -> None:
+        """Drop the cached read. Call if the backing store changed elsewhere."""
+        self._cache = None
 
     # ── ID Generation ─────────────────────────────────────────────────────────
 
     def _next_id(self, data: dict) -> str:
         """
         Increment the counter and return the next formatted patient ID.
-        Counter is written back to disk as part of the calling operation.
+        The caller persists the counter as part of its own write.
         """
-        data["id_counter"] += 1
+        data["id_counter"] = data.get("id_counter", 0) + 1
         return f"{PATIENT_ID_PREFIX}-{data['id_counter']:04d}"
 
     # ── Returning Patient Detection ───────────────────────────────────────────
 
-    def _normalize_name(self, name: str) -> str:
+    @staticmethod
+    def _normalize_name(name: str) -> str:
         """Lowercase and strip for consistent name matching."""
         return name.strip().lower()
 
     def is_returning(self, name: str) -> bool:
         """Return True if any prior card exists for this patient name."""
         normalized = self._normalize_name(name)
-        data = self._read()
         return any(
             self._normalize_name(card["patient"]["name"]) == normalized
-            for card in data["cards"].values()
+            for card in self._read()["cards"].values()
         )
 
     def get_prior_visits(self, name: str) -> list[PatientCard]:
-        """
-        Return all prior PatientCards for this name, sorted oldest first.
-        Used to display visit history for returning patients.
-        """
+        """All prior cards for this name, oldest first."""
         normalized = self._normalize_name(name)
-        data = self._read()
         matches = [
-            PatientCard.model_validate(card)
-            for card in data["cards"].values()
-            if self._normalize_name(card["patient"]["name"]) == normalized
+            card for card in self.get_all_cards()
+            if self._normalize_name(card.patient.name) == normalized
         ]
         return sorted(matches, key=lambda c: c.patient.check_in_time)
 
@@ -106,25 +95,23 @@ class PatientStore:
 
     def check_in(self, patient: Patient) -> Patient:
         """
-        Assign a unique ID to the patient, detect if returning, and persist
-        the bare patient record before triage begins.
-
-        Returns the patient with patient_id and is_returning set.
+        Assign a unique ID, detect a returning patient, and persist a pending
+        stub so the ID is reserved even if triage does not complete.
         """
         data = self._read()
 
-        patient_id = self._next_id(data)
-        patient.patient_id = patient_id
+        # Computed before the stub is written, or the patient would match
+        # themselves.
         patient.is_returning = self.is_returning(patient.name)
+        patient.patient_id = self._next_id(data)
 
         logger.info(
             "Check-in: %s assigned %s | returning=%s",
-            patient.name, patient_id, patient.is_returning,
+            patient.name, patient.patient_id, patient.is_returning,
         )
 
-        # Persist a pending stub so the ID is reserved even before triage completes
-        stub_card = PatientCard(patient=patient)
-        data["cards"][patient_id] = json.loads(stub_card.model_dump_json())
+        stub = PatientCard(patient=patient)
+        data["cards"][patient.patient_id] = json.loads(stub.model_dump_json())
         self._write(data)
 
         return patient
@@ -132,47 +119,61 @@ class PatientStore:
     # ── Save / Update ─────────────────────────────────────────────────────────
 
     def save_card(self, card: PatientCard) -> None:
-        """
-        Write or overwrite the PatientCard for a given patient_id.
-        Called after triage completes to replace the pending stub.
-        """
+        """Write or overwrite the card for a patient ID."""
         data = self._read()
         data["cards"][card.patient.patient_id] = json.loads(card.model_dump_json())
         self._write(data)
         logger.info("Saved card for %s — %s", card.patient.patient_id, card.display_esi)
 
+    def seed(self, cards: Iterable[PatientCard]) -> None:
+        """
+        Replace the queue with a fixed set of cards.
+
+        Used to load the demo cohort into a fresh session. The ID counter is
+        advanced past the seeded IDs so visitor check-ins do not collide.
+        """
+        data = empty_store()
+        highest = 0
+        for card in cards:
+            pid = card.patient.patient_id
+            data["cards"][pid] = json.loads(card.model_dump_json())
+            try:
+                highest = max(highest, int(pid.rsplit("-", 1)[-1]))
+            except ValueError:
+                logger.warning("Seeded card has an unparseable ID: %s", pid)
+        data["id_counter"] = highest
+        self._write(data)
+        logger.info("Seeded %d cards; next ID follows %d", len(data["cards"]), highest)
+
     # ── Retrieval ─────────────────────────────────────────────────────────────
 
     def get_card(self, patient_id: str) -> PatientCard | None:
-        """Retrieve a single PatientCard by ID. Returns None if not found."""
-        data = self._read()
-        raw = data["cards"].get(patient_id)
+        """Retrieve a single card by ID, or None if not found."""
+        raw = self._read()["cards"].get(patient_id)
         if raw is None:
             logger.warning("Patient ID %s not found in store", patient_id)
             return None
         return PatientCard.model_validate(raw)
 
     def get_all_cards(self) -> list[PatientCard]:
-        """
-        Return all PatientCards sorted by check-in time, newest first.
-        Used to populate the patient queue in the UI.
-        """
-        data = self._read()
-        cards = [PatientCard.model_validate(c) for c in data["cards"].values()]
+        """All cards, newest check-in first."""
+        cards = [PatientCard.model_validate(c) for c in self._read()["cards"].values()]
         return sorted(cards, key=lambda c: c.patient.check_in_time, reverse=True)
 
     def get_queue(self) -> list[PatientCard]:
         """
-        Return only patients whose status is PENDING or RED_FLAGGED —
-        i.e., the active triage queue, not fully resolved patients.
+        The active queue: everyone not yet dispositioned.
+
+        A patient leaves the queue when a clinician resolves them, not when the
+        pipeline finishes scoring them.
         """
         return [
             c for c in self.get_all_cards()
-            if c.patient.status in (TriageStatus.PENDING, TriageStatus.RED_FLAGGED)
+            if c.patient.status is not TriageStatus.RESOLVED
         ]
 
     def search_by_name(self, name: str) -> list[PatientCard]:
-        """Fuzzy name search — returns any card where the name contains the query."""
+        """Substring name search."""
         query = self._normalize_name(name)
         return [
             c for c in self.get_all_cards()
@@ -186,30 +187,60 @@ class PatientStore:
     # ── Stats ─────────────────────────────────────────────────────────────────
 
     def queue_stats(self) -> dict:
-        """
-        Return a summary dict used by the Streamlit dashboard header.
-        Counts total, red flagged, triaged, and pending patients.
-        """
+        """Summary counts for the dashboard header."""
         all_cards = self.get_all_cards()
+        active = [c for c in all_cards if c.patient.status is not TriageStatus.RESOLVED]
         return {
             "total": len(all_cards),
-            "red_flagged": sum(1 for c in all_cards if c.is_red_flagged),
-            "triaged": sum(1 for c in all_cards if c.patient.status == TriageStatus.TRIAGED),
-            "pending": sum(1 for c in all_cards if c.patient.status == TriageStatus.PENDING),
+            "active": len(active),
+            "immediate": sum(1 for c in active if c.needs_immediate_attention),
+            "elevated": sum(
+                1 for c in active
+                if c.is_escalated and not c.needs_immediate_attention
+            ),
+            "routine": sum(1 for c in active if not c.is_escalated and c.triage_result),
+            "pending": sum(1 for c in active if c.patient.status is TriageStatus.PENDING),
+            "system_errors": sum(1 for c in all_cards if c.has_system_error),
         }
 
     # ── Admin ─────────────────────────────────────────────────────────────────
 
     def clear_all(self) -> None:
-        """
-        Wipe the entire store and reset the ID counter.
-        Intended for end-of-shift resets — destructive, use with confirmation.
-        """
-        self._write(_EMPTY_STORE.copy())
+        """Wipe the queue and reset the ID counter. Destructive."""
+        self._write(empty_store())
         logger.warning("Patient store cleared — all records deleted")
 
 
-# ─── Module-Level Singleton ───────────────────────────────────────────────────
+# ─── Construction ─────────────────────────────────────────────────────────────
 
-# Single shared instance imported by the triage agent and Streamlit UI.
-store = PatientStore()
+def file_store(path: Path = STORE_PATH) -> PatientStore:
+    """Durable store shared by everyone using this instance of the app."""
+    return PatientStore(FileBackend(path))
+
+
+def session_store(container: MutableMapping) -> PatientStore:
+    """
+    Store scoped to one browser session.
+
+    Used for the public demo so visitors cannot see, or clear, each other's
+    patients. Nothing touches disk.
+    """
+    return PatientStore(DictBackend(container))
+
+
+def load_seed_cards(path: Path = SEED_COHORT) -> list[PatientCard]:
+    """
+    Load the committed demo cohort.
+
+    Returns an empty list if the file is absent or unreadable — a missing seed
+    means an empty department, not a broken app.
+    """
+    if not path.exists():
+        logger.info("No seed cohort at %s — starting with an empty queue", path)
+        return []
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        return [PatientCard.model_validate(c) for c in payload["cards"].values()]
+    except Exception as e:
+        logger.error("Could not read seed cohort %s: %s", path, e)
+        return []

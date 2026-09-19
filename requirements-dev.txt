@@ -1,0 +1,12 @@
+# Development and test dependencies: everything requirements.txt has, plus
+# pytest. The deterministic clinical rules (agents/assessment.py) still need
+# nothing beyond pydantic/python-dotenv/numpy/requests to test — that's
+# exercised separately, with a deliberately narrower install list, in the
+# "pure-logic" CI job (.github/workflows/tests.yml). This file is for running
+# the *full* suite locally, backend/requirements.txt included:
+#
+#   pip install -r requirements-dev.txt -r backend/requirements.txt
+
+-r requirements.txt
+
+pytest>=8.0.0
