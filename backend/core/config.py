@@ -31,7 +31,16 @@ def _bool_env(name: str, default: str = "false") -> bool:
 # Postgres in the real deployment. SQLite in-memory for tests — that keeps the
 # project's existing testing philosophy intact: the test suite needs no
 # external service, Postgres included.
+#
+# Render (and several other managed-Postgres hosts, following Heroku's old
+# convention) hand out connection strings starting "postgres://". SQLAlchemy
+# 1.4+ dropped that scheme in favor of "postgresql://" and raises
+# NoSuchModuleError on the old one — a well-documented, easy-to-hit gotcha,
+# not a hypothetical one, so it's handled here rather than discovered at
+# first deploy.
 DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///./triage_bot.db")
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
 
 # ─── Auth ─────────────────────────────────────────────────────────────────────

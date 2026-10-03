@@ -1,0 +1,71 @@
+# render.yaml — Render Blueprint for a one-click deploy of both services +
+# a free Postgres database. See DEPLOY.md for the walkthrough.
+#
+# Why Render over Streamlit Community Cloud: V2 is two services (FastAPI
+# backend + Streamlit) plus a real database. Streamlit Cloud only runs the
+# Streamlit process itself — it has no way to also run the backend or
+# provision a database, so it can't host this app at all post-V2.
+#
+# Service URLs are predicted below as https://<name>.onrender.com, which is
+# Render's standard default domain for a web service using that exact name.
+# If a name collision ever forces Render to assign something else, update
+# BACKEND_API_URL (on triagebot-api) and CORS_ORIGINS (on triagebot-ui) in
+# the Render dashboard to match reality, then redeploy — see DEPLOY.md.
+
+databases:
+  - name: triagebot-db
+    plan: free
+    databaseName: triagebot
+    user: triagebot
+
+services:
+  - type: web
+    name: triagebot-api-jo52
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt -r backend/requirements.txt
+    startCommand: >-
+      alembic -c backend/alembic.ini upgrade head &&
+      uvicorn backend.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: DATABASE_URL
+        fromDatabase:
+          name: triagebot-db
+          property: connectionString
+      # Render's Postgres connectionString starts "postgres://" — SQLAlchemy
+      # 1.4+ rejects that scheme outright. backend/core/config.py normalizes
+      # it to "postgresql://" at import time, so no action needed here; this
+      # comment exists so nobody "fixes" the fromDatabase value by hand.
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      - key: CORS_ORIGINS
+        value: https://triagebot-ui-jo52.onrender.com
+      - key: DEMO_MODE
+        value: "true"
+      - key: DEMO_ACCOUNT_PASSWORD
+        value: demo1234
+      # Public by design — this is the demo login screen's own displayed
+      # password (README.md / main.py's login hint), not a real secret.
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: VOYAGE_API_KEY
+        sync: false
+        # Optional — leave blank in the dashboard prompt if you don't have
+        # one. Retrieval degrades to lexical search, not a crash.
+
+  - type: web
+    name: triagebot-ui-jo52
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: streamlit run main.py --server.port $PORT --server.address 0.0.0.0
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: BACKEND_API_URL
+        value: https://triagebot-api-jo52.onrender.com
+      - key: DEMO_MODE
+        value: "true"

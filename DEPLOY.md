@@ -1,27 +1,24 @@
 # Deploying Triage Bot
 
-Steps 1 and 2 are done. Only Step 3 is left, and it needs your hosting
-account — I don't have a way to click through a provider's UI myself.
-
-> **Step 3 below is stale as of V2 Phase 4.** It describes deploying a
-> single Streamlit app that talks to the pipeline directly. As of Phase 4,
-> `main.py` is a thin client of `backend/`'s API (`BACKEND_API_URL`) — a real
-> deployment now needs the FastAPI service, a database, and `JWT_SECRET_KEY`
-> alongside Streamlit, not Streamlit alone. README.md's Architecture and Setup
-> sections describe the two-service shape and how to run both locally; this
-> file's Step 3 stays unrewritten because *which* host(s) to actually deploy
-> to is still your call — same reason it was deferred before. Treat Step 3 as
-> V1-only and don't follow it as written for the current branch until we pick
-> a hosting approach for two services + a database together.
+Steps 1 and 2 are done. Step 3 needed a hosting decision, which is now made:
+**Render**, via the `render.yaml` blueprint committed at the repo root. This
+replaces the old Streamlit-Community-Cloud plan — V2 is two services
+(FastAPI backend + Streamlit) plus a database, which Streamlit Cloud alone
+can't run at all.
 
 ---
 
 ## Step 1 — Review the clinical reference ✅ done
 
 `data/esi_reference.md` has been reviewed and signed off. The DRAFT marker
-is removed. Vital sign thresholds match `config.py` (`CRITICAL_VITALS` /
-`CONCERNING_VITALS`) exactly, and the clinical framing has been checked
-against real practice.
+is removed. Vital sign thresholds match `config.py` (adult tables —
+`CRITICAL_VITALS_ADULT` / `CONCERNING_VITALS_ADULT`) exactly, and the
+clinical framing has been checked against real practice.
+
+**Not yet reviewed**: the pediatric vital thresholds added later
+(`CRITICAL_VITALS_PEDIATRIC` / `CONCERNING_VITALS_PEDIATRIC`) and the eval
+vignette set (`evals/vignettes.json`) — both drafted, both flagged in their
+own files, neither blocks deploying the app itself.
 
 ## Step 2 — Seed cohort ✅ done
 
@@ -39,58 +36,88 @@ git add data/reference_index.json && git commit -m "Semantic reference index" &&
 Skip this if you don't have a Voyage key. The committed lexical index already
 works — it's a weaker search, not a missing one.
 
-## Step 3 — Deploy (needs your hosting account)
+## Step 3 — Deploy to Render (needs your account)
 
-**Recommended: Streamlit Community Cloud.** Free, zero config file, connects
-straight to your GitHub repo.
+`render.yaml` at the repo root defines everything: the FastAPI backend, the
+Streamlit UI, and a free Postgres database, wired together. This is a
+Blueprint deploy — Render reads that file and provisions all three at once.
 
-1. Go to [share.streamlit.io](https://share.streamlit.io), sign in with
-   GitHub.
-2. New app → pick `JustinOlivo52/triage-bot`, branch
-   `claude/codebase-analysis-improvements-mpz9oo` (or `main` once you've
-   merged), main file `main.py`.
-3. Before deploying, open **Advanced settings → Secrets** and paste:
+1. Go to [dashboard.render.com](https://dashboard.render.com), sign up or
+   sign in (GitHub sign-in is easiest, since Render needs repo access anyway).
+2. **New → Blueprint**, connect the `JustinOlivo52/triage-bot` repository,
+   branch `main`.
+3. Render parses `render.yaml` and shows a preview: one Postgres database
+   (`triagebot-db`) and two web services (`triagebot-api-jo52`,
+   `triagebot-ui-jo52`). Click through to create them.
+4. Render will prompt for two secrets it can't generate itself
+   (`sync: false` in the blueprint) — enter them when asked:
+   - `ANTHROPIC_API_KEY` — required, the pipeline can't run without it.
+   - `VOYAGE_API_KEY` — optional. Leave blank if you don't have one;
+     retrieval degrades to lexical search, not a crash.
+5. First deploy takes a few minutes — Render installs dependencies, then
+   runs database migrations automatically (`alembic upgrade head` is
+   chained into the backend's start command) before the API comes up.
 
-   ```toml
-   ANTHROPIC_API_KEY = "sk-ant-..."
-   DEMO_MODE = "true"
-   LIVE_TRIAGE_LIMIT = "3"
-   ```
+**Everything else is already wired in `render.yaml`:**
+- `JWT_SECRET_KEY` — Render generates and stores it (`generateValue: true`),
+  you never see or set it.
+- `DATABASE_URL` — pulled automatically from the Postgres service
+  (`fromDatabase`). Render's Postgres hands out a `postgres://` URL;
+  `backend/core/config.py` normalizes it to `postgresql://` at import time
+  (SQLAlchemy 1.4+ rejects the old scheme outright) — nothing to do here.
+- `CORS_ORIGINS` / `BACKEND_API_URL` — each service is pre-pointed at the
+  other's predicted `https://<name>.onrender.com` URL. This is Render's
+  standard default domain for a service with that exact name, so it should
+  just work. **If Render ever assigns a different URL** (a name collision,
+  astronomically unlikely but possible), both services will fail to talk to
+  each other — fix it by opening the other service's **Environment** tab in
+  the Render dashboard, updating the one URL to match what Render actually
+  assigned, and triggering a manual redeploy.
+- `DEMO_MODE=true` / `DEMO_ACCOUNT_PASSWORD=demo1234` — seeds the fixed demo
+  accounts and the committed patient cohort into the database on first
+  boot. This is what makes the deployed app safe to share: every visitor
+  signs in with the same demo credentials and sees the same real,
+  pre-populated department, not an empty login screen or a shared mutable
+  queue with no accountability.
 
-   Add `VOYAGE_API_KEY = "..."` too if you built the semantic index in Step 2.
-
-4. Deploy. First load takes 30-60s to install dependencies (531MB, well under
-   the ~1GB free-tier ceiling — this was the whole point of the stack
-   rewrite).
-
-**`DEMO_MODE=true` is what makes this safe to share.** Without it, every
-visitor shares one patient queue and any visitor can wipe it. With it, each
-visitor gets their own session-scoped queue seeded from your committed
-cohort, and live triage is capped at 3 runs per session.
-
-Render or Fly work too if you'd rather not use Streamlit's own host — same
-env vars, same footprint, just needs a `Procfile` or `render.yaml` I can
-write on request.
+**Free-tier behavior worth knowing**: both web services spin down after 15
+minutes of no traffic and take ~30-60 seconds to wake back up on the next
+request — the first click on a cold link will feel slow, that's normal, not
+broken. The free Postgres database expires 30 days after creation (then a
+14-day grace period before deletion). When it does: either pay ~$6-7/month
+to keep that instance (it has your audit trail and anything you checked in
+live), or just create a new free one and let `DEMO_MODE` reseed it from
+scratch — the seeded cohort means an empty database isn't actually a
+problem for a demo, just the end of that specific audit history.
 
 ## Step 4 — Verify
 
-Open the URL in a private/incognito window (a clean session, no cookies):
+Open the Streamlit service's URL (`triagebot-ui-jo52.onrender.com`, or
+whatever Render actually assigned) in a private/incognito window:
 
-- [ ] Seeded patients are visible immediately in the Active Queue
-- [ ] Opening a card shows escalation + ESI together, and the Symptom
-      Extraction panel for a denied/historical complaint
-- [ ] Checking in a new patient runs a live triage and decrements the counter
-      under the submit button
-- [ ] After 3 live runs, the 4th shows the "Demo limit reached" message
-- [ ] "Reset My Demo Session" only clears your own view
-- [ ] No key is visible in page source or browser devtools network tab
+- [ ] Login screen shows the demo credentials hint (`DEMO_MODE=true` worked)
+- [ ] Logging in as `demo_nurse` / `demo1234` shows all 8 seeded patients in
+      the Active Queue, with the right physician alerts
+- [ ] Opening a card shows escalation + ESI together, vitals, and the
+      Symptom Extraction panel for a patient with a denied/historical complaint
+- [ ] Checking in a new patient runs a **live** triage (needs
+      `ANTHROPIC_API_KEY` to actually be set) and decrements the demo-run
+      counter under the submit button
+- [ ] Logging in as `demo_physician` and resolving a patient works; logging
+      in as `demo_admin` and reading `GET /audit` (or the equivalent UI, once
+      built) shows the resolve action logged
+- [ ] No key is visible in page source or browser devtools network tab —
+      every pipeline call happens server-side in the backend, Streamlit
+      never sees `ANTHROPIC_API_KEY` at all
 
 Then put the URL at the top of the README and you're done.
 
 ---
 
-## If you want me to keep going without a key
+## If you want me to keep going without you
 
-I can prepare Render/Fly config, tighten the README further, or start the
-eval harness (Tier 1.2 — scoring the system against clinician-labeled
-vignettes) while you handle Steps 2-3. Say the word.
+Reviewing `evals/vignettes.json` or the pediatric thresholds in
+`config.py`/`data/esi_reference.md` needs your clinical judgment — I can't
+do that part. But I can keep building: grow the vignette set, start on real
+identity resolution for returning patients, or anything else on the
+roadmap. Say the word.
