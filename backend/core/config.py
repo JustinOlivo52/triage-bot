@@ -38,9 +38,22 @@ def _bool_env(name: str, default: str = "false") -> bool:
 # NoSuchModuleError on the old one — a well-documented, easy-to-hit gotcha,
 # not a hypothetical one, so it's handled here rather than discovered at
 # first deploy.
+#
+# Rewritten all the way to "postgresql+psycopg2://", not just
+# "postgresql://" — confirmed against a real deploy failure that a bare
+# "postgresql://" is NOT a safe stopping point. SQLAlchemy resolves the
+# driver for that scheme at engine-creation time, and that resolution isn't
+# stable across versions: 2.1.3 (what Render's unpinned `sqlalchemy>=2.0.0`
+# installed) picked the psycopg (v3) dialect by default, which isn't
+# installed here — only psycopg2-binary is — and failed with
+# "ModuleNotFoundError: No module named 'psycopg'" during `alembic upgrade
+# head`. Naming the driver explicitly removes the dependency on whatever
+# SQLAlchemy's default happens to be this version.
 DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///./triage_bot.db")
 if DATABASE_URL.startswith("postgres://"):
-    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+psycopg2://", 1)
+elif DATABASE_URL.startswith("postgresql://"):
+    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg2://", 1)
 
 
 # ─── Auth ─────────────────────────────────────────────────────────────────────
