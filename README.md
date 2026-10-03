@@ -173,6 +173,7 @@ triage-bot/
 ├── config.py                # Pipeline config: models, clinical thresholds, retrieval settings
 ├── models.py                # Pydantic v2 domain models + LangGraph TypedDict state
 ├── requirements.txt         # Streamlit + pipeline dependencies (~531MB footprint)
+├── render.yaml              # Render Blueprint — both services + Postgres, one deploy (see DEPLOY.md)
 │
 ├── agents/
 │   ├── assessment.py        # Deterministic clinical rules (pure, no LLM)
@@ -296,7 +297,7 @@ pip install -r requirements-dev.txt -r backend/requirements.txt
 pytest
 ```
 
-209 tests, well under a second for the deterministic core and well under a minute total, with **no API key and no network** — every LLM call any test would otherwise need is stubbed at the same boundary `agents/triage_agent.py` exposes for it.
+213 tests, well under a second for the deterministic core and well under a minute total, with **no API key and no network** — every LLM call any test would otherwise need is stubbed at the same boundary `agents/triage_agent.py` exposes for it.
 
 Two CI jobs mirror that same split (`.github/workflows/tests.yml`):
 - **pure-logic** — `agents/assessment.py`, `memory/`, and `rag/`'s lexical path, installed with a deliberately narrow dependency list (no LangChain, no FastAPI). If these tests ever start needing more than that, one of the "pure" modules has leaked a dependency it shouldn't have, and the job fails on purpose.
@@ -319,7 +320,7 @@ Coverage includes: threshold tiering and boundary conditions, the extraction-to-
 - **Cost-aware escalation** — only `IMMEDIATE` patients trigger a physician-summary LLM call
 - **Honest failure modes** — a pipeline failure is surfaced as a system error, never disguised as a clinical alert or a fabricated ESI score
 - **Retrieval degrades in steps, not all-or-nothing** — semantic search (Voyage key) → lexical search (no key) → ungrounded reasoning (no index), never a crash
-- **Zero-dependency clinical-rules testing** — 209 tests, no API key or network, split across two CI jobs so the pure logic's dependency guarantee is actually enforced, not just claimed
+- **Zero-dependency clinical-rules testing** — 213 tests, no API key or network, split across two CI jobs so the pure logic's dependency guarantee is actually enforced, not just claimed
 - **Eval harness, ready to run** — `evals/` measures ESI agreement against clinician-labeled vignettes (exact-match, within-one, under/over-triage rate); the harness itself is tested, the vignette set is drafted and awaiting clinical review before any number from it is a real claim
 
 ---
@@ -366,7 +367,7 @@ Coverage includes: threshold tiering and boundary conditions, the extraction-to-
 - [ ] Grow the vignette set toward the original 50-100 target once the starter batch is reviewed
 - [ ] Clinical review of the pediatric vital thresholds in `config.py`/`data/esi_reference.md` — same gate as the eval vignettes, see the note in the reference doc
 - [ ] Real identity resolution for returning patients (currently name-only matching — see Known Limitations)
-- [ ] Deploy — needs a hosting decision for two services + a database, not just Streamlit Community Cloud (see `DEPLOY.md`)
+- [ ] Deploy — hosting decided (Render, `render.yaml` blueprint committed), needs Justin's account signup; see `DEPLOY.md`
 
 ---
 
