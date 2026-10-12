@@ -21,7 +21,21 @@ from backend.db.base import Base
 from backend.db.session import get_db
 from backend.main import app
 from backend.models.user import User, UserRole
+from backend.core.rate_limit import check_in_limiter
 from backend.core.security import hash_password
+
+
+@pytest.fixture(autouse=True)
+def _reset_rate_limits():
+    """
+    check_in_limiter is process-global state, not per-test — without this,
+    tests that call check-in more than CHECK_IN_RATE_LIMIT times across the
+    whole session (easily true; many tests hit it once each, and
+    TestClient's default host is the same literal string every time) would
+    start getting 429s instead of the response they're actually testing.
+    """
+    check_in_limiter.reset()
+    yield
 
 
 @pytest.fixture()

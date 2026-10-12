@@ -297,7 +297,7 @@ pip install -r requirements-dev.txt -r backend/requirements.txt
 pytest
 ```
 
-221 tests, well under a second for the deterministic core and well under a minute total, with **no API key and no network** — every LLM call any test would otherwise need is stubbed at the same boundary `agents/triage_agent.py` exposes for it.
+228 tests, well under a second for the deterministic core and well under a minute total, with **no API key and no network** — every LLM call any test would otherwise need is stubbed at the same boundary `agents/triage_agent.py` exposes for it.
 
 Two CI jobs mirror that same split (`.github/workflows/tests.yml`):
 - **pure-logic** — `agents/assessment.py`, `memory/`, and `rag/`'s lexical path, installed with a deliberately narrow dependency list (no LangChain, no FastAPI). If these tests ever start needing more than that, one of the "pure" modules has leaked a dependency it shouldn't have, and the job fails on purpose.
@@ -320,7 +320,7 @@ Coverage includes: threshold tiering and boundary conditions, the extraction-to-
 - **Cost-aware escalation** — only `IMMEDIATE` patients trigger a physician-summary LLM call
 - **Honest failure modes** — a pipeline failure is surfaced as a system error, never disguised as a clinical alert or a fabricated ESI score
 - **Retrieval degrades in steps, not all-or-nothing** — semantic search (Voyage key) → lexical search (no key) → ungrounded reasoning (no index), never a crash
-- **Zero-dependency clinical-rules testing** — 221 tests, no API key or network, split across two CI jobs so the pure logic's dependency guarantee is actually enforced, not just claimed
+- **Zero-dependency clinical-rules testing** — 228 tests, no API key or network, split across two CI jobs so the pure logic's dependency guarantee is actually enforced, not just claimed
 - **Eval harness, ready to run** — `evals/` measures ESI agreement against clinician-labeled vignettes (exact-match, within-one, under/over-triage rate); the harness itself is tested, the vignette set is drafted and awaiting clinical review before any number from it is a real claim
 
 ---
