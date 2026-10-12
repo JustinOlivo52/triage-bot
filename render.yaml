@@ -55,6 +55,13 @@ services:
         sync: false
         # Optional — leave blank in the dashboard prompt if you don't have
         # one. Retrieval degrades to lexical search, not a crash.
+      - key: SENTRY_DSN
+        sync: false
+        # Optional — leave blank if you don't have a Sentry project yet.
+        # No DSN means no error tracking, not a crash (same pattern as
+        # VOYAGE_API_KEY above). Free tier at sentry.io covers this.
+      - key: LOG_LEVEL
+        value: INFO
 
   - type: web
     name: triagebot-ui-jo52

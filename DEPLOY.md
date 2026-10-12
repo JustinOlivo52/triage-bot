@@ -49,11 +49,17 @@ Blueprint deploy — Render reads that file and provisions all three at once.
 3. Render parses `render.yaml` and shows a preview: one Postgres database
    (`triagebot-db`) and two web services (`triagebot-api-jo52`,
    `triagebot-ui-jo52`). Click through to create them.
-4. Render will prompt for two secrets it can't generate itself
+4. Render will prompt for three secrets it can't generate itself
    (`sync: false` in the blueprint) — enter them when asked:
    - `ANTHROPIC_API_KEY` — required, the pipeline can't run without it.
    - `VOYAGE_API_KEY` — optional. Leave blank if you don't have one;
      retrieval degrades to lexical search, not a crash.
+   - `SENTRY_DSN` — optional. Leave blank if you don't have a
+     [sentry.io](https://sentry.io) project yet (free tier covers this).
+     With no DSN, errors just go to the service logs — no crash. With one,
+     unhandled backend exceptions (a failed triage call, a DB error) show
+     up in Sentry with a full stack trace instead of you having to catch
+     them by reading raw log lines.
 5. First deploy takes a few minutes — Render installs dependencies, then
    runs database migrations automatically (`alembic upgrade head` is
    chained into the backend's start command) before the API comes up.
