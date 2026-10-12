@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from backend.api.deps import require_role
+from backend.core.rate_limit import enforce_check_in_rate_limit
 from backend.db.session import get_db
 from backend.models.user import User, UserRole
 from backend.schemas.encounter import CheckInRequest, EncounterOut, ResolveRequest
@@ -36,7 +37,12 @@ _ADMIN_ONLY = require_role(UserRole.ADMIN)
 _NOT_FOUND = HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Encounter not found")
 
 
-@router.post("/check-in", response_model=EncounterOut, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/check-in",
+    response_model=EncounterOut,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(enforce_check_in_rate_limit)],
+)
 def check_in(
     payload: CheckInRequest,
     db: Session = Depends(get_db),

@@ -109,3 +109,11 @@ DEMO_ACCOUNT_PASSWORD: str = os.getenv("DEMO_ACCOUNT_PASSWORD", "demo1234")
 # to run. See backend/core/observability.py for what actually uses these.
 LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO").upper()
 SENTRY_DSN: str = os.getenv("SENTRY_DSN", "")
+
+# ─── Rate limiting ────────────────────────────────────────────────────────────
+#
+# Caps POST /encounters/check-in specifically — see backend/core/rate_limit.py
+# for why that's the only route this applies to. Defaults sized for a real
+# nurse checking in several patients during a surge, not for a script.
+CHECK_IN_RATE_LIMIT: int = int(os.getenv("CHECK_IN_RATE_LIMIT", "10"))
+CHECK_IN_RATE_LIMIT_WINDOW_SECONDS: float = float(os.getenv("CHECK_IN_RATE_LIMIT_WINDOW_SECONDS", "60"))
