@@ -101,3 +101,11 @@ CORS_ORIGINS: list[str] = [
 # V1's DEMO_MODE auto-loaded the seed cohort into a session-scoped store.
 DEMO_MODE: bool = _bool_env("DEMO_MODE")
 DEMO_ACCOUNT_PASSWORD: str = os.getenv("DEMO_ACCOUNT_PASSWORD", "demo1234")
+
+# ─── Observability ────────────────────────────────────────────────────────────
+#
+# Both are optional, same degrade-gracefully pattern as VOYAGE_API_KEY:
+# error tracking and a non-default log level are upgrades, never requirements
+# to run. See backend/core/observability.py for what actually uses these.
+LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO").upper()
+SENTRY_DSN: str = os.getenv("SENTRY_DSN", "")

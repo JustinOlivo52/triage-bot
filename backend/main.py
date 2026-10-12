@@ -12,9 +12,16 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from backend.api.routes import audit, auth, encounters
 from backend.core.config import CORS_ORIGINS, DEMO_MODE
+from backend.core.observability import configure_logging, init_error_tracking
 from backend.db.session import SessionLocal
 from backend.services.demo_seed import run_demo_seed
 from rag.retriever import retrieval_mode
+
+# Both run before anything else touches logging or raises, so every log
+# line from here on is structured and every unhandled exception reaches
+# Sentry if SENTRY_DSN is set.
+configure_logging()
+init_error_tracking()
 
 logger = logging.getLogger(__name__)
 
